@@ -1,5 +1,7 @@
 #include "recording/AudioSource.h"
 
+#if !defined(_WIN32)
+
 extern "C" {
 #include <libavdevice/avdevice.h>
 #include <libavformat/avformat.h>
@@ -98,4 +100,205 @@ void AudioSource::close() {
     streamIdx_ = -1;
 }
 
+}  // namespace rr
+
+#else  // _WIN32 — WASAPI shared-mode capture of the default input device
+
+#include <windows.h>
+#include <mmdeviceapi.h>
+#include <audioclient.h>
+#include <mmreg.h>
+
+#include <cmath>
+
+namespace rr {
+
+namespace {
+
+// REFERENCE_TIME is in 100-ns units; request a 200 ms capture buffer.
+constexpr long long kBufferDurationHns = 2000000;
+
+template <typename T>
+void safeRelease(T*& p) {
+    if (p) { p->Release(); p = nullptr; }
 }
+
+// Identify the sample format of a WASAPI shared mix format. For WAVE_FORMAT_EXTENSIBLE,
+// the SubFormat GUID's Data1 equals the legacy WAVE_FORMAT_* tag, so we avoid ksmedia.h.
+enum class SampleFmt { Unknown, Flt, S16, S32 };
+
+SampleFmt classifyFormat(const WAVEFORMATEX* wf) {
+    WORD tag = wf->wFormatTag;
+    if (tag == WAVE_FORMAT_EXTENSIBLE) {
+        const auto* ext = reinterpret_cast<const WAVEFORMATEXTENSIBLE*>(wf);
+        tag = static_cast<WORD>(ext->SubFormat.Data1);
+    }
+    if (tag == WAVE_FORMAT_IEEE_FLOAT) return SampleFmt::Flt;
+    if (tag == WAVE_FORMAT_PCM) {
+        if (wf->wBitsPerSample == 16) return SampleFmt::S16;
+        if (wf->wBitsPerSample == 32) return SampleFmt::S32;
+    }
+    return SampleFmt::Unknown;
+}
+
+int16_t clampToS16(double v) {
+    if (v > 32767.0) return 32767;
+    if (v < -32768.0) return -32768;
+    return static_cast<int16_t>(std::lround(v));
+}
+
+}  // namespace
+
+AudioSource::~AudioSource() { close(); }
+
+bool AudioSource::open() {
+    running_.store(true);
+    ready_ = false;
+    openOk_ = false;
+    captureThread_ = std::thread([this] { captureLoop(); });
+
+    // Wait for the capture thread to negotiate the format (or fail).
+    std::unique_lock<std::mutex> lock(mutex_);
+    cv_.wait(lock, [this] { return ready_; });
+    const bool ok = openOk_;
+    lock.unlock();
+
+    if (!ok) {
+        // Negotiation failed; the thread has already returned. Join and reset.
+        running_.store(false);
+        if (captureThread_.joinable()) captureThread_.join();
+    }
+    return ok;
+}
+
+void AudioSource::captureLoop() {
+    const bool comInit = SUCCEEDED(CoInitializeEx(nullptr, COINIT_MULTITHREADED));
+
+    IMMDeviceEnumerator* enumerator = nullptr;
+    IMMDevice* device = nullptr;
+    IAudioClient* client = nullptr;
+    IAudioCaptureClient* capture = nullptr;
+    WAVEFORMATEX* wf = nullptr;
+    SampleFmt fmt = SampleFmt::Unknown;
+    int bytesPerSample = 0;
+
+    auto fail = [&]() {
+        if (wf) CoTaskMemFree(wf);
+        safeRelease(capture);
+        safeRelease(client);
+        safeRelease(device);
+        safeRelease(enumerator);
+        if (comInit) CoUninitialize();
+        std::lock_guard<std::mutex> lock(mutex_);
+        ready_ = true;
+        openOk_ = false;
+        cv_.notify_all();
+    };
+
+    if (FAILED(CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
+                                __uuidof(IMMDeviceEnumerator),
+                                reinterpret_cast<void**>(&enumerator)))) { fail(); return; }
+    if (FAILED(enumerator->GetDefaultAudioEndpoint(eCapture, eConsole, &device))) { fail(); return; }
+    if (FAILED(device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr,
+                                reinterpret_cast<void**>(&client)))) { fail(); return; }
+    if (FAILED(client->GetMixFormat(&wf)) || !wf) { fail(); return; }
+
+    fmt = classifyFormat(wf);
+    if (fmt == SampleFmt::Unknown) { fail(); return; }
+    bytesPerSample = wf->wBitsPerSample / 8;
+
+    if (FAILED(client->Initialize(AUDCLNT_SHAREMODE_SHARED, 0,
+                                  kBufferDurationHns, 0, wf, nullptr))) { fail(); return; }
+    if (FAILED(client->GetService(__uuidof(IAudioCaptureClient),
+                                  reinterpret_cast<void**>(&capture)))) { fail(); return; }
+    if (FAILED(client->Start())) { fail(); return; }
+
+    const int channels = wf->nChannels;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        sampleRate_ = static_cast<int>(wf->nSamplesPerSec);
+        channels_ = channels;
+        ready_ = true;
+        openOk_ = true;
+        cv_.notify_all();
+    }
+
+    // Pull packets, convert to S16, and append to the queue until close() stops us.
+    while (running_.load()) {
+        UINT32 packetFrames = 0;
+        if (FAILED(capture->GetNextPacketSize(&packetFrames))) break;
+        if (packetFrames == 0) { Sleep(5); continue; }
+
+        while (packetFrames != 0) {
+            BYTE* data = nullptr;
+            UINT32 numFrames = 0;
+            DWORD flags = 0;
+            if (FAILED(capture->GetBuffer(&data, &numFrames, &flags, nullptr, nullptr))) {
+                packetFrames = 0;
+                break;
+            }
+            const size_t count = static_cast<size_t>(numFrames) * channels;
+            std::vector<int16_t> chunk(count);
+            const bool silent = (flags & AUDCLNT_BUFFERFLAGS_SILENT) != 0;
+            if (silent || data == nullptr) {
+                // chunk already zero-initialized
+            } else if (fmt == SampleFmt::Flt) {
+                const auto* s = reinterpret_cast<const float*>(data);
+                for (size_t i = 0; i < count; ++i) chunk[i] = clampToS16(s[i] * 32767.0);
+            } else if (fmt == SampleFmt::S16) {
+                const auto* s = reinterpret_cast<const int16_t*>(data);
+                for (size_t i = 0; i < count; ++i) chunk[i] = s[i];
+            } else {  // S32
+                const auto* s = reinterpret_cast<const int32_t*>(data);
+                for (size_t i = 0; i < count; ++i) chunk[i] = static_cast<int16_t>(s[i] >> 16);
+            }
+            (void)bytesPerSample;
+            capture->ReleaseBuffer(numFrames);
+
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                queue_.insert(queue_.end(), chunk.begin(), chunk.end());
+            }
+            cv_.notify_all();
+
+            if (FAILED(capture->GetNextPacketSize(&packetFrames))) { packetFrames = 0; break; }
+        }
+    }
+
+    client->Stop();
+    CoTaskMemFree(wf);
+    safeRelease(capture);
+    safeRelease(client);
+    safeRelease(device);
+    safeRelease(enumerator);
+    if (comInit) CoUninitialize();
+
+    // Wake any reader blocked waiting for data so it can observe end-of-stream.
+    cv_.notify_all();
+}
+
+bool AudioSource::readSamples(std::vector<int16_t>& interleaved, int& nbSamples) {
+    std::unique_lock<std::mutex> lock(mutex_);
+    cv_.wait(lock, [this] { return !queue_.empty() || !running_.load(); });
+    if (queue_.empty()) {
+        nbSamples = 0;
+        return false;  // capture stopped and drained
+    }
+    interleaved.assign(queue_.begin(), queue_.end());
+    queue_.clear();
+    lock.unlock();
+
+    nbSamples = channels_ > 0 ? static_cast<int>(interleaved.size()) / channels_ : 0;
+    return nbSamples > 0;
+}
+
+void AudioSource::close() {
+    running_.store(false);
+    cv_.notify_all();
+    if (captureThread_.joinable()) captureThread_.join();
+    queue_.clear();
+}
+
+}  // namespace rr
+
+#endif  // _WIN32

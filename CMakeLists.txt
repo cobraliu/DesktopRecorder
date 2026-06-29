@@ -58,8 +58,9 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_include_directories(rr_core PUBLIC ${X11_INCLUDE_DIR})
     target_link_libraries(rr_core PUBLIC ${X11_LIBRARIES} ${X11_Xext_LIB})
 elseif(WIN32)
-    # WindowsFrameSource captures via GDI BitBlt into a DIB section.
-    target_link_libraries(rr_core PUBLIC gdi32 user32)
+    # WindowsFrameSource captures via GDI BitBlt into a DIB section; AudioSource
+    # captures via WASAPI (COM), which needs ole32 for CoCreateInstance/CoTaskMemFree.
+    target_link_libraries(rr_core PUBLIC gdi32 user32 ole32)
 endif()
 
 add_executable(RegionRecord src/main.cpp)
