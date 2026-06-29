@@ -5,6 +5,7 @@ on:
     branches: [ main, master ]
     tags: [ 'v*' ]
   pull_request:
+  workflow_dispatch:
 
 env:
   VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
@@ -14,6 +15,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Free up disk space
+        # Qt + FFmpeg built statically from source needs a lot of room; the
+        # default runner ships ~14 GB free, so reclaim the large preinstalled SDKs.
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android \
+            /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" || true
+          df -h /
       - name: Export GitHub Actions cache env (vcpkg)
         uses: actions/github-script@v7
         with:
@@ -28,8 +36,11 @@ jobs:
             libxrender-dev libxi-dev libfontconfig1-dev libfreetype-dev \
             libpulse-dev libasound2-dev
       - name: Setup vcpkg
+        # Pin vcpkg to the exact commit used for the known-good local build so CI
+        # installs the same package versions (matches builtin-baseline in vcpkg.json).
         run: |
           git clone https://github.com/microsoft/vcpkg "$HOME/vcpkg"
+          git -C "$HOME/vcpkg" checkout a0400024711b283056538ac19ced80b91a83c24c
           "$HOME/vcpkg/bootstrap-vcpkg.sh" -disableMetrics
           echo "VCPKG_ROOT=$HOME/vcpkg" >> "$GITHUB_ENV"
           echo "RR_TRIPLET=x64-linux" >> "$GITHUB_ENV"
@@ -37,6 +48,13 @@ jobs:
         run: |
           cmake --preset release-static
           cmake --build --preset release-static
+      - name: Dump vcpkg logs on failure
+        if: failure()
+        run: |
+          echo "=== vcpkg-manifest-install.log ==="
+          cat build-static/vcpkg-manifest-install.log 2>/dev/null || true
+          echo "=== port build error logs ==="
+          find "$HOME/vcpkg/buildtrees" -name '*-err.log' -print -exec tail -40 {} \; 2>/dev/null | head -300 || true
       - name: Verify no dynamic Qt/libav deps
         run: |
           if ldd build-static/RegionRecord | grep -Ei 'qt|avcodec|avformat|avdevice|x264|swscale|swresample'; then
