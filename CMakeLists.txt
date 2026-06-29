@@ -5,6 +5,16 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 
+# vcpkg's *-windows-static triplets build every dependency against the static CRT (/MT).
+# MSVC compiles our own translation units against the dynamic CRT (/MD) by default, so
+# linking our objects to the static-CRT libs fails with LNK2038/LNK2005. Match the triplet
+# (static CRT) so the runtimes agree AND the executable carries no dependency on the VC++
+# runtime DLLs, preserving the single self-contained static binary. CMP0091 (NEW since the
+# 3.21 floor we require) makes this the runtime-selection mechanism and drops the /MD default.
+if(MSVC AND VCPKG_TARGET_TRIPLET MATCHES "-static$")
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
+
 find_package(Qt6 REQUIRED COMPONENTS Widgets Test)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     find_package(X11 REQUIRED)
