@@ -1,0 +1,52 @@
+# RegionRecord
+
+A fast, cross-platform region screen recorder built with Qt 6 and FFmpeg, designed to be shipped as a **single self-contained executable** (one AppImage on Linux) with no external dynamic library dependencies.
+
+It was built to replace tools that freeze when you stop recording: RegionRecord finalizes the MP4 reliably and can recover gracefully if finalization is interrupted.
+
+## Features
+
+- **Three capture modes**: fullscreen, drag-to-select region, and pick-a-window.
+- **Live capture frame**: a translucent frame marks the recording area; click-through so you can keep working under it.
+- **Always-available stop**: a floating "Stop" bar appears while recording, plus an optional global hotkey (`Ctrl+Alt+S`). The bar works even when the hotkey is grabbed by your desktop environment.
+- **Delayed start**: optional 3s / 5s countdown before recording begins.
+- **Configurable FPS** (default 10) and optional audio capture.
+- **Recording history**: play, open the containing folder, or delete past recordings (with optional file deletion).
+- **Dark, themed UI** with crisp vector icons (HiDPI-aware).
+
+## Platform support
+
+- **Linux / X11** — fully supported (capture via `x11grab`).
+- **Windows / macOS** — UI and reveal-in-folder logic are cross-platform; capture backends are planned.
+- Wayland capture is under investigation (the current path is X11-only).
+
+## Building
+
+Requirements: CMake ≥ 3.21, a C++17 compiler, Qt 6, and FFMPEG (libav*).
+
+### Development build (system Qt + FFmpeg)
+
+```bash
+cmake -S . -B build-dev -DCMAKE_BUILD_TYPE=Debug
+cmake --build build-dev -j
+ctest --test-dir build-dev
+```
+
+### Release build (static, single binary via vcpkg)
+
+```bash
+cmake --preset release-static   # uses vcpkg static triplet
+cmake --build build-static -j
+```
+
+The resulting `build-static/RegionRecord` links libav*, x264 and Qt statically — verify with `ldd`.
+
+### Packaging (Linux AppImage)
+
+```bash
+packaging/linux/build-appimage.sh
+```
+
+## License
+
+Released under the [MIT License](LICENSE).

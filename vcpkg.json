@@ -1,0 +1,41 @@
+{
+  "name": "regionrecord",
+  "version": "0.1.0",
+  "dependencies": [
+    { "name": "ffmpeg", "features": ["x264", "avdevice"] },
+    { "name": "ffmpeg", "platform": "linux", "features": ["alsa"] },
+    {
+      "name": "qtbase",
+      "default-features": false,
+      "features": [
+        "concurrent",
+        "dbus",
+        "doubleconversion",
+        "freetype",
+        "gui",
+        "harfbuzz",
+        "jpeg",
+        "opengl",
+        "pcre2",
+        "png",
+        "testlib",
+        "thread",
+        "widgets",
+        "zstd"
+      ]
+    },
+    {
+      "name": "qtbase",
+      "platform": "linux",
+      "default-features": false,
+      "features": [
+        "egl",
+        "fontconfig",
+        "xcb",
+        "xcb-sm",
+        "xcb-xlib",
+        "xrender"
+      ]
+    }
+  ]
+}
