@@ -46,11 +46,19 @@ jobs:
           fi
       - name: Package AppImage
         run: ./packaging/linux/build-appimage.sh
+      - name: Stage release binaries
+        run: |
+          mkdir -p dist
+          cp build-static/RegionRecord dist/RegionRecord-x86_64-linux
+          chmod +x dist/RegionRecord-x86_64-linux dist/RegionRecord*.AppImage || true
+          ls -la dist
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: RegionRecord-linux
-          path: dist/RegionRecord*.AppImage
+          path: |
+            dist/RegionRecord*.AppImage
+            dist/RegionRecord-x86_64-linux
 
   # ---------------------------------------------------------------------------
   # Windows / macOS jobs: scaffolding is ready, but currently disabled via `if: false`.
@@ -148,5 +156,8 @@ jobs:
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
+          name: RegionRecord ${{ github.ref_name }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
           files: |
             artifacts/RegionRecord-linux/*
