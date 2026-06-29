@@ -63,13 +63,24 @@ elseif(WIN32)
     target_link_libraries(rr_core PUBLIC gdi32 user32 ole32)
 endif()
 
-add_executable(RegionRecord src/main.cpp)
+# On Windows, WIN32 makes it a GUI app (no console window) and the .rc embeds the
+# Explorer/taskbar icon. The runtime window icon is set in code for every OS.
+if(WIN32)
+    add_executable(RegionRecord WIN32 src/main.cpp packaging/windows/RegionRecord.rc)
+else()
+    add_executable(RegionRecord src/main.cpp)
+endif()
 target_include_directories(RegionRecord PRIVATE src)
 target_link_libraries(RegionRecord PRIVATE rr_ui)
 
 add_executable(ui_snapshot tools/ui_snapshot.cpp)
 target_include_directories(ui_snapshot PRIVATE src)
 target_link_libraries(ui_snapshot PRIVATE rr_ui)
+
+# Dev tool: export the app icon to PNGs for packaging (.ico/.icns/.png).
+add_executable(render_icon tools/render_icon.cpp)
+target_include_directories(render_icon PRIVATE src)
+target_link_libraries(render_icon PRIVATE rr_ui)
 
 enable_testing()
 add_executable(test_ffmpeg_probe tests/test_ffmpeg_probe.cpp)

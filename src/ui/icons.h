@@ -1,5 +1,6 @@
 #pragma once
 #include <QIcon>
+#include <QImage>
 #include <QPixmap>
 #include <QColor>
 
@@ -18,5 +19,14 @@ QIcon iconStop(const QColor& c, int px = 16);        // solid rounded square (st
 QIcon iconFolder(const QColor& c, int px = 16);      // folder (open directory)
 
 QPixmap statusDot(const QColor& c, int px = 12);     // solid status dot
+
+// Full application icon: a filled dark rounded-square ("squircle") with teal
+// region-selection brackets framing a red record dot. Unlike the monochrome
+// toolbar icons above this has an opaque background, so it reads on the macOS
+// Dock / Windows taskbar. renderAppIcon paints a single size (for export to
+// PNG/.ico/.icns); appIcon assembles the common sizes into a QIcon for
+// QApplication::setWindowIcon.
+QImage renderAppIcon(int px);
+QIcon appIcon();
 
 }

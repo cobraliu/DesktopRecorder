@@ -177,8 +177,9 @@ jobs:
       - name: Assemble universal .app
         run: |
           APP="dist/RegionRecord.app"
-          mkdir -p "$APP/Contents/MacOS"
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
           cp packaging/macos/Info.plist "$APP/Contents/Info.plist"
+          cp packaging/icon/RegionRecord.icns "$APP/Contents/Resources/RegionRecord.icns"
           lipo -create build-arm64/RegionRecord build-x64/RegionRecord \
             -output "$APP/Contents/MacOS/RegionRecord"
           lipo -info "$APP/Contents/MacOS/RegionRecord"

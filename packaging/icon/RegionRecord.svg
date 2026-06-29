@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- RegionRecord app icon master.
+     Concept: teal region-selection brackets (the app's "select a region" motif)
+     framing a red record dot (the universal "recording" signal). Reads as
+     "capture a screen region + record" and matches the in-app icon language
+     (src/ui/icons.cpp: iconFrame corner brackets, iconRecord solid dot, teal
+     accent #19c3a3). A filled dark rounded-square background keeps it legible
+     on macOS (Dock/Finder squircle mask) and Windows (taskbar/Start tile). -->
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1c222b"/>
+      <stop offset="1" stop-color="#0e1217"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#ff5a60" stop-opacity="0.55"/>
+      <stop offset="0.6" stop-color="#ff5a60" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#ff5a60" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="dot" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ff5c61"/>
+      <stop offset="1" stop-color="#e23b41"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background squircle -->
+  <rect x="0" y="0" width="1024" height="1024" rx="230" ry="230" fill="url(#bg)"/>
+  <!-- Subtle top edge highlight for depth -->
+  <rect x="0" y="0" width="1024" height="1024" rx="230" ry="230"
+        fill="none" stroke="#2bd4b5" stroke-opacity="0.10" stroke-width="3"/>
+
+  <!-- Region-selection corner brackets (teal) -->
+  <g fill="none" stroke="#19c3a3" stroke-width="52"
+     stroke-linecap="round" stroke-linejoin="round">
+    <path d="M288 448 L288 288 L448 288"/>
+    <path d="M576 288 L736 288 L736 448"/>
+    <path d="M288 576 L288 736 L448 736"/>
+    <path d="M736 576 L736 736 L576 736"/>
+  </g>
+
+  <!-- Record dot (red) with soft glow -->
+  <circle cx="512" cy="512" r="178" fill="url(#glow)"/>
+  <circle cx="512" cy="512" r="120" fill="url(#dot)"/>
+</svg>
