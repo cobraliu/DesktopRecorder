@@ -32,9 +32,12 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build cmake curl nasm \
-            libgl1-mesa-dev libxkbcommon-dev '^libxcb.*-dev' libx11-xcb-dev \
-            libxrender-dev libxi-dev libfontconfig1-dev libfreetype-dev \
-            libpulse-dev libasound2-dev
+            autoconf automake libtool autoconf-archive pkg-config \
+            bison flex gperf python3 python3-jinja2 python3-setuptools \
+            libgl1-mesa-dev libegl1-mesa-dev libxkbcommon-dev libxkbcommon-x11-dev \
+            '^libxcb.*-dev' libx11-xcb-dev libxext-dev libxfixes-dev libxdamage-dev \
+            libxrender-dev libxi-dev libxtst-dev libfontconfig1-dev libfreetype-dev \
+            libdbus-1-dev libpulse-dev libasound2-dev
       - name: Setup vcpkg
         # Pin vcpkg to the exact commit used for the known-good local build so CI
         # installs the same package versions (matches builtin-baseline in vcpkg.json).
@@ -68,6 +71,7 @@ jobs:
         run: |
           mkdir -p dist
           cp build-static/RegionRecord dist/RegionRecord-x86_64-linux
+          strip dist/RegionRecord-x86_64-linux   # drop ~100MB of debug symbols (~154MB -> ~58MB)
           chmod +x dist/RegionRecord-x86_64-linux dist/RegionRecord*.AppImage || true
           ls -la dist
       - name: Upload artifact
