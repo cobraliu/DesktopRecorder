@@ -8,7 +8,9 @@ on:
   workflow_dispatch:
 
 env:
-  VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
+  # GitHub removed the x-gha vcpkg cache backend; use vcpkg's default files cache
+  # (~/.cache/vcpkg/archives) and persist it across runs with actions/cache below.
+  VCPKG_BINARY_SOURCES: "clear;default,readwrite"
 
 jobs:
   build-linux:
@@ -37,7 +39,17 @@ jobs:
             libgl1-mesa-dev libegl1-mesa-dev libxkbcommon-dev libxkbcommon-x11-dev \
             '^libxcb.*-dev' libx11-xcb-dev libxext-dev libxfixes-dev libxdamage-dev \
             libxrender-dev libxi-dev libxtst-dev libfontconfig1-dev libfreetype-dev \
-            libdbus-1-dev libpulse-dev libasound2-dev
+            libdbus-1-dev libpulse-dev libasound2-dev libsm-dev libice-dev
+      - name: Cache vcpkg binary archives
+        # Persist built packages (ffmpeg, x264, qtbase, ...) so iterative CI fixes don't
+        # rebuild everything (~35 min). Key on the manifest + pinned baseline.
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/vcpkg/archives
+          key: vcpkg-${{ runner.os }}-a0400024-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            vcpkg-${{ runner.os }}-a0400024-
+            vcpkg-${{ runner.os }}-
       - name: Setup vcpkg
         # Pin vcpkg to the exact commit used for the known-good local build so CI
         # installs the same package versions (matches builtin-baseline in vcpkg.json).
