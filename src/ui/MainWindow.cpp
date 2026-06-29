@@ -5,8 +5,8 @@
 #include "app/RecordingStore.h"
 #include "app/RecordingController.h"
 #include "app/RegionPresets.h"
-#include "platform/GlobalHotkeyX11.h"
-#include "platform/WindowPickerX11.h"
+#include "platform/GlobalHotkey.h"
+#include "platform/WindowPicker.h"
 #include "recording/types.h"
 
 #include <QWidget>
@@ -39,7 +39,6 @@
 #include <QFontMetrics>
 #include <QGraphicsDropShadowEffect>
 #include <QColor>
-#include <X11/keysym.h>
 
 namespace rr {
 
@@ -196,9 +195,10 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     buildStopHud();
 
     // Global hotkey Ctrl+Alt+S to stop (may be taken by the desktop environment / another program; the registration result decides the hint text)
-    hotkey_ = new GlobalHotkeyX11(this);
-    hotkeyOk_ = hotkey_->registerHotkey(1, true, true, false, XK_s);
-    connect(hotkey_, &GlobalHotkeyX11::triggered, this, &MainWindow::onStopRequested);
+    hotkey_ = createGlobalHotkey(this);
+    hotkeyOk_ = hotkey_ && hotkey_->registerHotkey(1, true, true, false, Qt::Key_S);
+    if (hotkey_)
+        connect(hotkey_, &GlobalHotkey::triggered, this, &MainWindow::onStopRequested);
 
     connect(recordBtn_, &QPushButton::clicked, this, &MainWindow::onStartClicked);
     connect(modeGroup_, &QButtonGroup::idClicked, this, &MainWindow::onModeClicked);
@@ -334,9 +334,9 @@ void MainWindow::onModeClicked(int id) {
     } else {   // Window: blocking click-to-pick
         hide();
         QGuiApplication::processEvents();
-        WindowPickerX11 picker;
+        auto picker = createWindowPicker();
         CaptureRegion picked{};
-        const bool ok = picker.pickBlocking(picked);
+        const bool ok = picker && picker->pickBlocking(picked);
         showNormal(); raise();
         if (ok) {
             mode_ = m;

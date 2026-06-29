@@ -18,7 +18,7 @@ class RecordingStore;
 class RecordingController;
 class CountdownOverlay;
 class CaptureFrameWindow;
-class GlobalHotkeyX11;
+class GlobalHotkey;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -55,7 +55,7 @@ private:
     std::unique_ptr<RecordingController> controller_;
     CountdownOverlay* countdown_ = nullptr;
     CaptureFrameWindow* captureFrame_ = nullptr;
-    GlobalHotkeyX11* hotkey_ = nullptr;
+    GlobalHotkey* hotkey_ = nullptr;
     QSystemTrayIcon* tray_ = nullptr;
     QWidget* stopHud_ = nullptr;          // persistent floating "Stop" button shown while recording (does not rely on a hotkey)
     QLabel* stopHudHint_ = nullptr;
