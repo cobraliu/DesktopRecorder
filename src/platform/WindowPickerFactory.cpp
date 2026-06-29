@@ -4,6 +4,8 @@
 
 #if defined(Q_OS_LINUX)
 #include "platform/WindowPickerX11.h"
+#elif defined(Q_OS_WIN)
+#include "platform/WindowPickerWindows.h"
 #endif
 
 namespace rr {
@@ -11,8 +13,10 @@ namespace rr {
 std::unique_ptr<WindowPicker> createWindowPicker() {
 #if defined(Q_OS_LINUX)
     return std::make_unique<WindowPickerX11>();
+#elif defined(Q_OS_WIN)
+    return std::make_unique<WindowPickerWindows>();
 #else
-    // Windows/macOS pickers land in later phases.
+    // macOS picker lands in a later phase.
     return nullptr;
 #endif
 }

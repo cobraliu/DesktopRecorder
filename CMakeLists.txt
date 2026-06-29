@@ -36,7 +36,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set(PLATFORM_CAPTURE_SRC src/recording/X11FrameSource.cpp)
     # WaylandFrameSource.cpp is added here in Phase 2.
 elseif(WIN32)
-    set(PLATFORM_CAPTURE_SRC)  # WindowsFrameSource.cpp: Phase 3
+    set(PLATFORM_CAPTURE_SRC src/recording/WindowsFrameSource.cpp)
 elseif(APPLE)
     set(PLATFORM_CAPTURE_SRC)  # MacFrameSource.mm: Phase 4
 endif()
@@ -57,6 +57,9 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     # unavailable in the static build, so we grab pixels ourselves.
     target_include_directories(rr_core PUBLIC ${X11_INCLUDE_DIR})
     target_link_libraries(rr_core PUBLIC ${X11_LIBRARIES} ${X11_Xext_LIB})
+elseif(WIN32)
+    # WindowsFrameSource captures via GDI BitBlt into a DIB section.
+    target_link_libraries(rr_core PUBLIC gdi32 user32)
 endif()
 
 add_executable(RegionRecord src/main.cpp)
@@ -103,7 +106,10 @@ add_test(NAME test_audio_source COMMAND test_audio_source)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set(PLATFORM_HOTKEY_SRC src/platform/GlobalHotkeyX11.cpp)
     set(PLATFORM_PICKER_SRC src/platform/WindowPickerX11.cpp)
-    # Windows/macOS backends (GlobalHotkeyWindows/Mac, WindowPickerWindows/Mac) land in Phases 3-4.
+elseif(WIN32)
+    set(PLATFORM_HOTKEY_SRC src/platform/GlobalHotkeyWindows.cpp)
+    set(PLATFORM_PICKER_SRC src/platform/WindowPickerWindows.cpp)
+    # macOS backends (GlobalHotkeyMac, WindowPickerMac) land in Phase 4.
 endif()
 
 add_library(rr_app STATIC
@@ -123,6 +129,10 @@ target_link_libraries(rr_app PUBLIC Qt6::Core rr_core)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_libraries(rr_app PUBLIC ${X11_LIBRARIES})
     target_include_directories(rr_app PUBLIC ${X11_INCLUDE_DIR})
+elseif(WIN32)
+    # GlobalHotkeyWindows (RegisterHotKey/GetMessage) and WindowPickerWindows
+    # (WindowFromPoint/GetWindowRect/cursor) both use the Win32 user32 API.
+    target_link_libraries(rr_app PUBLIC user32)
 endif()
 
 add_executable(test_recording_item tests/app/test_recording_item.cpp)
