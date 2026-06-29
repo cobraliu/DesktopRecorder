@@ -111,10 +111,14 @@ jobs:
             core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
             core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
       - uses: lukka/get-cmake@latest
-      - name: Cache vcpkg binary archives
+      - name: Restore vcpkg binary archives
         # Persist built packages (ffmpeg, x264, qtbase, ...) so iterative CI fixes
         # don't rebuild everything. Windows' default files cache lives under LOCALAPPDATA.
-        uses: actions/cache@v4
+        # Split restore/save (not the combined action) so the Save step below can run with
+        # if: always() — the combined actions/cache skips its post-save when the job fails,
+        # which would discard the ~90-min Qt/FFmpeg compile every time our build step errors.
+        id: vcpkg-cache
+        uses: actions/cache/restore@v4
         with:
           path: ~\AppData\Local\vcpkg\archives
           key: vcpkg-${{ runner.os }}-a0400024-${{ hashFiles('vcpkg.json') }}
@@ -144,6 +148,14 @@ jobs:
           cat build-static/vcpkg-manifest-install.log 2>/dev/null || true
           echo "=== port build error logs ==="
           find "$HOME/vcpkg/buildtrees" -name '*-err.log' -print -exec tail -40 {} \; 2>/dev/null | head -300 || true
+      - name: Save vcpkg binary archives
+        # Save even when the build step fails so the expensive Qt/FFmpeg compile is cached for
+        # the next run. Skip when the restore was an exact hit (the key already holds the data).
+        if: always() && steps.vcpkg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~\AppData\Local\vcpkg\archives
+          key: vcpkg-${{ runner.os }}-a0400024-${{ hashFiles('vcpkg.json') }}
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
