@@ -37,8 +37,10 @@ add_library(rr_core STATIC
     src/recording/AudioSource.cpp
     src/recording/Recorder.cpp
 )
-target_include_directories(rr_core PUBLIC src)
-target_link_libraries(rr_core PUBLIC rr_ffmpeg Qt6::Core)
+target_include_directories(rr_core PUBLIC src ${X11_INCLUDE_DIR})
+# X11FrameSource captures via libX11 + MIT-SHM (libXext); FFmpeg's x11grab is
+# unavailable in the static build, so we grab pixels ourselves.
+target_link_libraries(rr_core PUBLIC rr_ffmpeg Qt6::Core ${X11_LIBRARIES} ${X11_Xext_LIB})
 
 add_executable(RegionRecord src/main.cpp)
 target_include_directories(RegionRecord PRIVATE src)

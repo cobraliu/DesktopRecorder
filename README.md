@@ -16,7 +16,7 @@ It was built to replace tools that freeze when you stop recording: RegionRecord 
 
 ## Platform support
 
-- **Linux / X11** — fully supported (capture via `x11grab`).
+- **Linux / X11** — fully supported (capture via X11 + MIT-SHM, no external FFmpeg device).
 - **Windows / macOS** — UI and reveal-in-folder logic are cross-platform; capture backends are planned.
 - Wayland capture is under investigation (the current path is X11-only).
 

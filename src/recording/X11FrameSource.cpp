@@ -1,96 +1,230 @@
 #include "recording/X11FrameSource.h"
 
-extern "C" {
-#include <libavdevice/avdevice.h>
-#include <libavformat/avformat.h>
-#include <libavcodec/avcodec.h>
-#include <libavutil/opt.h>
-#include <libavutil/imgutils.h>
-#include <libswscale/swscale.h>
-}
+#include <X11/Xlib.h>
+#include <X11/Xutil.h>
+#include <X11/extensions/XShm.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
 
+#include <chrono>
 #include <cstdlib>
-#include <string>
+#include <cstring>
+#include <thread>
 
 namespace rr {
+
+namespace {
+// Number of low-order zero bits in a channel mask (e.g. 0x00FF0000 -> 16).
+int maskShift(unsigned long mask) {
+    int s = 0;
+    if (!mask) return 0;
+    while (!(mask & 1)) { mask >>= 1; ++s; }
+    return s;
+}
+// Number of set bits in a channel mask (e.g. 0x00FF0000 -> 8).
+int maskBits(unsigned long mask) {
+    int b = 0;
+    while (mask) { b += static_cast<int>(mask & 1); mask >>= 1; }
+    return b;
+}
+long long nowNs() {
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(
+               std::chrono::steady_clock::now().time_since_epoch())
+        .count();
+}
+}  // namespace
 
 X11FrameSource::~X11FrameSource() { close(); }
 
 bool X11FrameSource::open(const CaptureRegion& region, int fps) {
-    avdevice_register_all();
-    const AVInputFormat* ifmt = av_find_input_format("x11grab");
-    if (!ifmt) return false;
+    Display* dpy = XOpenDisplay(std::getenv("DISPLAY"));
+    if (!dpy) return false;
+    dpy_ = dpy;
 
-    const char* disp = std::getenv("DISPLAY");
-    std::string input = std::string(disp ? disp : ":0")
-        + "+" + std::to_string(region.x) + "," + std::to_string(region.y);
+    const int screen = DefaultScreen(dpy);
+    root_ = static_cast<unsigned long>(RootWindow(dpy, screen));
+    Visual* visual = DefaultVisual(dpy, screen);
+    const int depth = DefaultDepth(dpy, screen);
+    const int screenW = DisplayWidth(dpy, screen);
+    const int screenH = DisplayHeight(dpy, screen);
 
-    AVDictionary* opts = nullptr;
-    const std::string vs = std::to_string(region.w) + "x" + std::to_string(region.h);
-    av_dict_set(&opts, "video_size", vs.c_str(), 0);
-    av_dict_set(&opts, "framerate", std::to_string(fps).c_str(), 0);
+    // Clamp the requested region to the screen so XShmGetImage cannot read out
+    // of bounds (which raises a BadMatch and would tear down the connection).
+    x_ = region.x < 0 ? 0 : region.x;
+    y_ = region.y < 0 ? 0 : region.y;
+    int w = region.w;
+    int h = region.h;
+    if (x_ + w > screenW) w = screenW - x_;
+    if (y_ + h > screenH) h = screenH - y_;
+    if (w <= 0 || h <= 0) { close(); return false; }
+    // Encoders dislike odd dimensions; round down to even.
+    w &= ~1;
+    h &= ~1;
+    if (w <= 0 || h <= 0) { close(); return false; }
+    width_ = w;
+    height_ = h;
+    fps_ = fps > 0 ? fps : 10;
 
-    if (avformat_open_input(&fmt_, input.c_str(), ifmt, &opts) < 0) {
-        av_dict_free(&opts);
-        return false;
-    }
-    av_dict_free(&opts);
-    if (avformat_find_stream_info(fmt_, nullptr) < 0) return false;
-
-    for (unsigned i = 0; i < fmt_->nb_streams; ++i) {
-        if (fmt_->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
-            streamIdx_ = static_cast<int>(i); break;
+    useShm_ = XShmQueryExtension(dpy) == True;
+    if (useShm_) {
+        auto* shm = new XShmSegmentInfo;
+        std::memset(shm, 0, sizeof(*shm));
+        XImage* img = XShmCreateImage(dpy, visual, static_cast<unsigned>(depth),
+                                      ZPixmap, nullptr, shm,
+                                      static_cast<unsigned>(width_),
+                                      static_cast<unsigned>(height_));
+        if (!img) {
+            delete shm;
+            useShm_ = false;
+        } else {
+            shm->shmid = shmget(IPC_PRIVATE,
+                                static_cast<size_t>(img->bytes_per_line) * img->height,
+                                IPC_CREAT | 0600);
+            if (shm->shmid < 0) {
+                XDestroyImage(img);
+                delete shm;
+                useShm_ = false;
+            } else {
+                shm->shmaddr = static_cast<char*>(shmat(shm->shmid, nullptr, 0));
+                img->data = shm->shmaddr;
+                shm->readOnly = False;
+                if (shm->shmaddr == reinterpret_cast<char*>(-1) ||
+                    XShmAttach(dpy, shm) != True) {
+                    if (shm->shmaddr != reinterpret_cast<char*>(-1)) shmdt(shm->shmaddr);
+                    shmctl(shm->shmid, IPC_RMID, nullptr);
+                    XDestroyImage(img);
+                    delete shm;
+                    useShm_ = false;
+                } else {
+                    XSync(dpy, False);
+                    // Mark for destruction now; the segment is freed once we
+                    // detach (or on process exit) even if we crash.
+                    shmctl(shm->shmid, IPC_RMID, nullptr);
+                    image_ = img;
+                    shm_ = shm;
+                }
+            }
         }
     }
-    if (streamIdx_ < 0) return false;
 
-    AVCodecParameters* par = fmt_->streams[streamIdx_]->codecpar;
-    const AVCodec* dec = avcodec_find_decoder(par->codec_id);
-    if (!dec) return false;
-    dec_ = avcodec_alloc_context3(dec);
-    if (avcodec_parameters_to_context(dec_, par) < 0) return false;
-    if (avcodec_open2(dec_, dec, nullptr) < 0) return false;
+    if (!useShm_) {
+        // Non-SHM fallback: probe one XGetImage to learn the pixel layout. The
+        // actual per-frame grab re-fetches because the image is destroyed each
+        // time (XGetImage allocates its own buffer).
+        XImage* probe = XGetImage(dpy, root_, x_, y_,
+                                  static_cast<unsigned>(width_),
+                                  static_cast<unsigned>(height_),
+                                  AllPlanes, ZPixmap);
+        if (!probe) { close(); return false; }
+        image_ = probe;
+    }
 
-    width_ = par->width;
-    height_ = par->height;
+    XImage* img = static_cast<XImage*>(image_);
+    bitsPerPixel_ = img->bits_per_pixel;
+    redShift_   = maskShift(img->red_mask);
+    greenShift_ = maskShift(img->green_mask);
+    blueShift_  = maskShift(img->blue_mask);
+    redBits_    = maskBits(img->red_mask);
+    greenBits_  = maskBits(img->green_mask);
+    blueBits_   = maskBits(img->blue_mask);
+    if (!useShm_) {
+        // The probe is regenerated each readFrame in the fallback path.
+        XDestroyImage(img);
+        image_ = nullptr;
+    }
 
-    frame_ = av_frame_alloc();
-    rgbFrame_ = av_frame_alloc();
-    pkt_ = av_packet_alloc();
-    sws_ = sws_getContext(width_, height_, (AVPixelFormat)par->format,
-                          width_, height_, AV_PIX_FMT_RGB24,
-                          SWS_BILINEAR, nullptr, nullptr, nullptr);
-    return sws_ != nullptr;
+    startNs_ = 0;
+    frameIndex_ = 0;
+    return true;
 }
 
 bool X11FrameSource::readFrame(std::vector<uint8_t>& rgb, int& stride) {
-    while (av_read_frame(fmt_, pkt_) >= 0) {
-        if (pkt_->stream_index != streamIdx_) { av_packet_unref(pkt_); continue; }
-        const int s = avcodec_send_packet(dec_, pkt_);
-        av_packet_unref(pkt_);
-        if (s < 0) return false;
-        const int r = avcodec_receive_frame(dec_, frame_);
-        if (r == AVERROR(EAGAIN)) continue;
-        if (r < 0) return false;
+    Display* dpy = static_cast<Display*>(dpy_);
+    if (!dpy) return false;
 
-        stride = width_ * 3;
-        rgb.resize(static_cast<size_t>(stride) * height_);
-        uint8_t* dst[1] = { rgb.data() };
-        int dstStride[1] = { stride };
-        sws_scale(sws_, frame_->data, frame_->linesize, 0, height_, dst, dstStride);
-        return true;
+    // Pace to the target frame rate so the produced video matches wall-clock.
+    const long long t = nowNs();
+    if (startNs_ == 0) startNs_ = t;
+    const long long deadline = startNs_ + frameIndex_ * (1000000000LL / fps_);
+    if (t < deadline) {
+        std::this_thread::sleep_for(std::chrono::nanoseconds(deadline - t));
     }
-    return false;
+    ++frameIndex_;
+
+    XImage* img = nullptr;
+    if (useShm_) {
+        img = static_cast<XImage*>(image_);
+        XShmSegmentInfo* shm = static_cast<XShmSegmentInfo*>(shm_);
+        (void)shm;
+        if (XShmGetImage(dpy, root_, img, x_, y_, AllPlanes) != True) return false;
+    } else {
+        img = XGetImage(dpy, root_, x_, y_,
+                        static_cast<unsigned>(width_),
+                        static_cast<unsigned>(height_),
+                        AllPlanes, ZPixmap);
+        if (!img) return false;
+    }
+
+    stride = width_ * 3;
+    rgb.resize(static_cast<size_t>(stride) * height_);
+
+    const int bytesPP = bitsPerPixel_ / 8;
+    const int rMax = (1 << redBits_) - 1;
+    const int gMax = (1 << greenBits_) - 1;
+    const int bMax = (1 << blueBits_) - 1;
+    const unsigned long rMask = img->red_mask;
+    const unsigned long gMask = img->green_mask;
+    const unsigned long bMask = img->blue_mask;
+
+    for (int row = 0; row < height_; ++row) {
+        const unsigned char* src =
+            reinterpret_cast<const unsigned char*>(img->data) +
+            static_cast<size_t>(row) * img->bytes_per_line;
+        unsigned char* dst = rgb.data() + static_cast<size_t>(row) * stride;
+        for (int col = 0; col < width_; ++col) {
+            unsigned long px = 0;
+            const unsigned char* p = src + static_cast<size_t>(col) * bytesPP;
+            // X server pixels are in the image's byte order; assemble the
+            // native integer accordingly.
+            if (img->byte_order == LSBFirst) {
+                for (int k = bytesPP - 1; k >= 0; --k) px = (px << 8) | p[k];
+            } else {
+                for (int k = 0; k < bytesPP; ++k) px = (px << 8) | p[k];
+            }
+            unsigned long r = (px & rMask) >> redShift_;
+            unsigned long g = (px & gMask) >> greenShift_;
+            unsigned long b = (px & bMask) >> blueShift_;
+            // Scale each channel up to 8 bits when the visual uses fewer.
+            dst[0] = rMax ? static_cast<unsigned char>(r * 255 / rMax) : 0;
+            dst[1] = gMax ? static_cast<unsigned char>(g * 255 / gMax) : 0;
+            dst[2] = bMax ? static_cast<unsigned char>(b * 255 / bMax) : 0;
+            dst += 3;
+        }
+    }
+
+    if (!useShm_) XDestroyImage(img);
+    return true;
 }
 
 void X11FrameSource::close() {
-    if (sws_)      { sws_freeContext(sws_); sws_ = nullptr; }
-    if (frame_)    av_frame_free(&frame_);
-    if (rgbFrame_) av_frame_free(&rgbFrame_);
-    if (pkt_)      av_packet_free(&pkt_);
-    if (dec_)      avcodec_free_context(&dec_);
-    if (fmt_)      avformat_close_input(&fmt_);
-    streamIdx_ = -1;
+    Display* dpy = static_cast<Display*>(dpy_);
+    if (image_ && useShm_) {
+        XShmSegmentInfo* shm = static_cast<XShmSegmentInfo*>(shm_);
+        if (dpy && shm) XShmDetach(dpy, shm);
+        XDestroyImage(static_cast<XImage*>(image_));  // frees the XImage struct
+        if (shm) {
+            if (shm->shmaddr && shm->shmaddr != reinterpret_cast<char*>(-1))
+                shmdt(shm->shmaddr);
+            delete shm;
+        }
+    } else if (image_) {
+        XDestroyImage(static_cast<XImage*>(image_));
+    }
+    image_ = nullptr;
+    shm_ = nullptr;
+    useShm_ = false;
+    if (dpy) XCloseDisplay(dpy);
+    dpy_ = nullptr;
 }
 
-}
+}  // namespace rr
