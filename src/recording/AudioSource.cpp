@@ -1,6 +1,6 @@
 #include "recording/AudioSource.h"
 
-#if !defined(_WIN32)
+#if !defined(_WIN32) && !defined(__APPLE__)
 
 extern "C" {
 #include <libavdevice/avdevice.h>
@@ -102,7 +102,7 @@ void AudioSource::close() {
 
 }  // namespace rr
 
-#else  // _WIN32 — WASAPI shared-mode capture of the default input device
+#elif defined(_WIN32)  // WASAPI shared-mode capture of the default input device
 
 #include <windows.h>
 #include <mmdeviceapi.h>
@@ -301,4 +301,98 @@ void AudioSource::close() {
 
 }  // namespace rr
 
-#endif  // _WIN32
+#else  // __APPLE__ — CoreAudio AudioQueue capture of the default input device
+
+#include <AudioToolbox/AudioQueue.h>
+
+namespace rr {
+
+namespace {
+
+// AudioQueue input callback. Runs on the queue's internal thread: copy the S16 samples
+// into the AudioSource queue, then re-enqueue the buffer for reuse.
+void rrAudioInputCallback(void* userData, AudioQueueRef inAQ, AudioQueueBufferRef buf,
+                          const AudioTimeStamp*, UInt32, const AudioStreamPacketDescription*) {
+    if (auto* self = static_cast<AudioSource*>(userData); self && buf) {
+        self->appendCaptured(static_cast<const int16_t*>(buf->mAudioData),
+                             buf->mAudioDataByteSize / sizeof(int16_t));
+    }
+    if (inAQ && buf) AudioQueueEnqueueBuffer(inAQ, buf, 0, nullptr);
+}
+
+}  // namespace
+
+AudioSource::~AudioSource() { close(); }
+
+bool AudioSource::open() {
+    // Request S16 interleaved 48 kHz stereo directly; AudioQueue converts from the device's
+    // native format. (Exact mono-mic / sample-rate behaviour is runtime-verified on a Mac.)
+    AudioStreamBasicDescription asbd = {};
+    asbd.mSampleRate = 48000.0;
+    asbd.mFormatID = kAudioFormatLinearPCM;
+    asbd.mFormatFlags = kLinearPCMFormatFlagIsSignedInteger | kLinearPCMFormatFlagIsPacked;
+    asbd.mChannelsPerFrame = 2;
+    asbd.mBitsPerChannel = 16;
+    asbd.mBytesPerFrame = asbd.mChannelsPerFrame * static_cast<UInt32>(sizeof(int16_t));
+    asbd.mFramesPerPacket = 1;
+    asbd.mBytesPerPacket = asbd.mBytesPerFrame;
+
+    AudioQueueRef q = nullptr;
+    if (AudioQueueNewInput(&asbd, &rrAudioInputCallback, this, nullptr, nullptr, 0, &q) != noErr)
+        return false;
+    queue_ = q;
+    sampleRate_ = 48000;
+    channels_ = 2;
+
+    // Four ~100 ms buffers in rotation.
+    const UInt32 bytesPerBuffer = asbd.mBytesPerFrame * 4800;
+    for (int i = 0; i < 4; ++i) {
+        AudioQueueBufferRef buf = nullptr;
+        if (AudioQueueAllocateBuffer(q, bytesPerBuffer, &buf) != noErr) { close(); return false; }
+        if (AudioQueueEnqueueBuffer(q, buf, 0, nullptr) != noErr) { close(); return false; }
+    }
+
+    running_.store(true);
+    if (AudioQueueStart(q, nullptr) != noErr) { close(); return false; }
+    return true;
+}
+
+void AudioSource::appendCaptured(const int16_t* data, std::size_t count) {
+    if (!running_.load() || count == 0 || !data) return;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        samples_.insert(samples_.end(), data, data + count);
+    }
+    cv_.notify_all();
+}
+
+bool AudioSource::readSamples(std::vector<int16_t>& interleaved, int& nbSamples) {
+    std::unique_lock<std::mutex> lock(mutex_);
+    cv_.wait(lock, [this] { return !samples_.empty() || !running_.load(); });
+    if (samples_.empty()) {
+        nbSamples = 0;
+        return false;  // capture stopped and drained
+    }
+    interleaved.assign(samples_.begin(), samples_.end());
+    samples_.clear();
+    lock.unlock();
+
+    nbSamples = channels_ > 0 ? static_cast<int>(interleaved.size()) / channels_ : 0;
+    return nbSamples > 0;
+}
+
+void AudioSource::close() {
+    running_.store(false);
+    cv_.notify_all();
+    if (queue_) {
+        AudioQueueStop(static_cast<AudioQueueRef>(queue_), true);
+        AudioQueueDispose(static_cast<AudioQueueRef>(queue_), true);
+        queue_ = nullptr;
+    }
+    std::lock_guard<std::mutex> lock(mutex_);
+    samples_.clear();
+}
+
+}  // namespace rr
+
+#endif  // platform audio backend
