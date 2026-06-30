@@ -166,8 +166,8 @@ jobs:
   # build-macos is enabled: the macOS backends (Quartz CGDisplay capture, Carbon hotkey,
   # CGWindowList picker, CoreAudio AudioQueue) are implemented and CMake configures on macOS.
   # Compile-only verification; runtime correctness is checked by the user on real hardware.
-  # Builds a single native arm64 slice (matches the macos-14 runner); a universal (lipo)
-  # build is a follow-up. The release job gains macOS once this is proven green.
+  # Apple Silicon (arm64) only: builds a single native arm64 slice on the macos-14
+  # runner. Intel (x86_64) macOS is not supported -- no universal (lipo) build.
   build-macos:
     runs-on: macos-14
     steps:
@@ -227,12 +227,12 @@ jobs:
           file "$APP/Contents/MacOS/RegionRecord"
       - name: Zip and upload
         run: |
-          cd dist && zip -r RegionRecord-macos.zip RegionRecord.app
+          cd dist && zip -r RegionRecord-macos-arm64.zip RegionRecord.app
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: RegionRecord-macos
-          path: dist/RegionRecord-macos.zip
+          name: RegionRecord-macos-arm64
+          path: dist/RegionRecord-macos-arm64.zip
 
   # On tag (v*) pushes, attach the produced artifacts to a GitHub Release.
   # Linux, Windows and macOS all build green and contribute their artifact.
@@ -256,4 +256,4 @@ jobs:
           files: |
             artifacts/RegionRecord-linux/*
             artifacts/RegionRecord-windows/*
-            artifacts/RegionRecord-macos/*
+            artifacts/RegionRecord-macos-arm64/*
