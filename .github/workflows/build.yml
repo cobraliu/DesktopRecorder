@@ -98,8 +98,8 @@ jobs:
   # build-windows is enabled: the Windows backends (GDI capture, RegisterHotKey,
   # window picker, WASAPI audio) are implemented and CMake configures on Windows.
   # This job is compile-only verification; runtime correctness is checked by the
-  # user on real hardware. build-macos stays disabled (if: false) until its
-  # ScreenCaptureKit/AVFoundation backends land (Phase 4).
+  # user on real hardware. build-macos (CGDisplay capture, Carbon hotkey, window
+  # picker, AudioQueue audio) is likewise enabled and compile-only.
   # ---------------------------------------------------------------------------
   build-windows:
     runs-on: windows-latest
@@ -234,9 +234,9 @@ jobs:
           path: dist/RegionRecord-macos.zip
 
   # On tag (v*) pushes, attach the produced artifacts to a GitHub Release.
-  # Linux and Windows build green; macOS is added to needs/files once build-macos lands (Phase 4).
+  # Linux, Windows and macOS all build green and contribute their artifact.
   release:
-    needs: [ build-linux, build-windows ]
+    needs: [ build-linux, build-windows, build-macos ]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
@@ -255,3 +255,4 @@ jobs:
           files: |
             artifacts/RegionRecord-linux/*
             artifacts/RegionRecord-windows/*
+            artifacts/RegionRecord-macos/*
