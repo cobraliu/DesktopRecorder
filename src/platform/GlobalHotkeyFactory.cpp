@@ -6,6 +6,8 @@
 #include "platform/GlobalHotkeyX11.h"
 #elif defined(Q_OS_WIN)
 #include "platform/GlobalHotkeyWindows.h"
+#elif defined(Q_OS_MAC)
+#include "platform/GlobalHotkeyMac.h"
 #endif
 
 namespace rr {
@@ -15,9 +17,11 @@ GlobalHotkey* createGlobalHotkey(QObject* parent) {
     return new GlobalHotkeyX11(parent);
 #elif defined(Q_OS_WIN)
     return new GlobalHotkeyWindows(parent);
+#elif defined(Q_OS_MAC)
+    return new GlobalHotkeyMac(parent);
 #else
-    // macOS backend lands in a later phase; no global hotkey for now.
-    // The always-available floating Stop HUD remains the reliable stop path.
+    // No global-hotkey backend on this platform; the always-available floating
+    // Stop HUD remains the reliable stop path.
     (void)parent;
     return nullptr;
 #endif

@@ -8,6 +8,8 @@
 #include "recording/X11FrameSource.h"
 #elif defined(Q_OS_WIN)
 #include "recording/WindowsFrameSource.h"
+#elif defined(Q_OS_MAC)
+#include "recording/MacFrameSource.h"
 #endif
 
 namespace rr {
@@ -25,7 +27,8 @@ std::unique_ptr<FrameSource> createFrameSource() {
 #elif defined(Q_OS_WIN)
     return std::make_unique<WindowsFrameSource>();
 #elif defined(Q_OS_MAC)
-    return nullptr;  // MacFrameSource: Phase 4
+    // Quartz CGDisplay capture (main display). Requires Screen Recording permission.
+    return std::make_unique<MacFrameSource>();
 #else
     return nullptr;
 #endif
