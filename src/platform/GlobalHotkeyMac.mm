@@ -93,7 +93,7 @@ bool GlobalHotkeyMac::registerHotkey(int id, bool ctrl, bool alt, bool shift, in
             return false;
         }
         handler_ = ref;
-        handlerUPP_ = upp;
+        handlerUPP_ = reinterpret_cast<void (*)()>(upp);
     }
 
     // Map the app's cross-platform Ctrl modifier to the Carbon control key. cmdKey is
@@ -123,7 +123,7 @@ void GlobalHotkeyMac::unregisterAll() {
         handler_ = nullptr;
     }
     if (handlerUPP_) {
-        DisposeEventHandlerUPP(static_cast<EventHandlerUPP>(handlerUPP_));
+        DisposeEventHandlerUPP(reinterpret_cast<EventHandlerUPP>(handlerUPP_));
         handlerUPP_ = nullptr;
     }
 }

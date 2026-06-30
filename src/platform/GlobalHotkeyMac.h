@@ -23,7 +23,9 @@ private:
     struct Binding { int id; void* ref; };  // ref = EventHotKeyRef
     QVector<Binding> bindings_;
     void* handler_ = nullptr;  // EventHandlerRef, installed lazily on first registration
-    void* handlerUPP_ = nullptr;  // EventHandlerUPP, disposed in unregisterAll
+    // EventHandlerUPP is a function pointer; C++ forbids round-tripping one through
+    // void* (unlike C), so store it as a generic function pointer and reinterpret_cast.
+    void (*handlerUPP_)() = nullptr;  // EventHandlerUPP, disposed in unregisterAll
 };
 
 }  // namespace rr
