@@ -20,7 +20,8 @@ It was built to replace tools that freeze when you stop recording: RegionRecord 
 - **Linux / Wayland** — capture via `xdg-desktop-portal` ScreenCast + PipeWire (see below).
 - **Windows / macOS** — capture, hotkey, window-pick, and audio backends are implemented;
   runtime verification on real hardware is ongoing. macOS ships **both Apple Silicon
-  (arm64) and Intel (x86_64)** builds as separate downloads.
+  (arm64) and Intel (x86_64)** builds as separate downloads; the Intel slice targets
+  macOS 14, the Apple Silicon slice runs on macOS 14 and 15.
 
 ### Wayland notes
 

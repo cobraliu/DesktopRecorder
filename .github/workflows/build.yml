@@ -166,10 +166,14 @@ jobs:
   # build-macos is enabled: the macOS backends (Quartz CGDisplay capture, Carbon hotkey,
   # CGWindowList picker, CoreAudio AudioQueue) are implemented and CMake configures on macOS.
   # Compile-only verification; runtime correctness is checked by the user on real hardware.
-  # Builds both native slices: Apple Silicon (arm64) on macos-14 and Intel (x86_64) on
-  # macos-15-intel. NOTE: GitHub's Intel macOS runner is the last x86_64 image and is slated
-  # for removal around Aug 2027; after that, switch the x64 leg to cross-compiling x64-osx on
-  # an arm64 runner (or drop Intel).
+  #
+  # Both legs run on macos-14 (Apple Silicon host, macOS 14 SDK). That SDK still has
+  # CGDisplayCreateImageForRect, which the macOS 15 SDK removed ("obsoleted"). The x64 slice is
+  # CROSS-COMPILED here: the x64-osx triplet sets VCPKG_OSX_ARCHITECTURES=x86_64, and the macOS
+  # SDK is universal, so clang on the arm64 host emits x86_64. This keeps Intel on the macOS 14
+  # SDK without a paid native-Intel runner. The Intel binary targets macOS 14; the arm64 binary
+  # runs forward on macOS 15. (When the capture path moves to ScreenCaptureKit, both legs can go
+  # to a current macOS-15 SDK runner.)
   build-macos:
     strategy:
       fail-fast: false
@@ -178,7 +182,7 @@ jobs:
           - runner: macos-14
             arch: arm64
             triplet: arm64-osx
-          - runner: macos-15-intel
+          - runner: macos-14
             arch: x64
             triplet: x64-osx
     runs-on: ${{ matrix.runner }}
