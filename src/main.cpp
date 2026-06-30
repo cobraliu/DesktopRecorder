@@ -14,6 +14,9 @@ Q_IMPORT_PLUGIN(QWindowsIntegrationPlugin)
 Q_IMPORT_PLUGIN(QCocoaIntegrationPlugin)
 #elif defined(Q_OS_LINUX)
 Q_IMPORT_PLUGIN(QXcbIntegrationPlugin)
+// Native Wayland sessions select this plugin instead of xcb (XWayland). Both are
+// imported; Qt picks one at startup from XDG_SESSION_TYPE / WAYLAND_DISPLAY.
+Q_IMPORT_PLUGIN(QWaylandIntegrationPlugin)
 #endif
 #endif
 
