@@ -19,8 +19,8 @@ It was built to replace tools that freeze when you stop recording: RegionRecord 
 - **Linux / X11** — fully supported (capture via X11 + MIT-SHM, no external FFmpeg device).
 - **Linux / Wayland** — capture via `xdg-desktop-portal` ScreenCast + PipeWire (see below).
 - **Windows / macOS** — capture, hotkey, window-pick, and audio backends are implemented;
-  runtime verification on real hardware is ongoing. macOS builds are **Apple Silicon
-  (arm64) only**; Intel (x86_64) Macs are not supported.
+  runtime verification on real hardware is ongoing. macOS ships **both Apple Silicon
+  (arm64) and Intel (x86_64)** builds as separate downloads.
 
 ### Wayland notes
 

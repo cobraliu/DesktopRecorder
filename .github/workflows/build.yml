@@ -166,10 +166,22 @@ jobs:
   # build-macos is enabled: the macOS backends (Quartz CGDisplay capture, Carbon hotkey,
   # CGWindowList picker, CoreAudio AudioQueue) are implemented and CMake configures on macOS.
   # Compile-only verification; runtime correctness is checked by the user on real hardware.
-  # Apple Silicon (arm64) only: builds a single native arm64 slice on the macos-14
-  # runner. Intel (x86_64) macOS is not supported -- no universal (lipo) build.
+  # Builds both native slices: Apple Silicon (arm64) on macos-14 and Intel (x86_64) on
+  # macos-15-intel. NOTE: GitHub's Intel macOS runner is the last x86_64 image and is slated
+  # for removal around Aug 2027; after that, switch the x64 leg to cross-compiling x64-osx on
+  # an arm64 runner (or drop Intel).
   build-macos:
-    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-14
+            arch: arm64
+            triplet: arm64-osx
+          - runner: macos-15-intel
+            arch: x64
+            triplet: x64-osx
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/github-script@v7
@@ -185,21 +197,22 @@ jobs:
           python3 -m pip install --break-system-packages jinja2 || pip3 install jinja2 || true
       - name: Restore vcpkg binary archives
         # Split restore/save so the Save step can run with if: always() (see build-windows).
+        # Key includes matrix.arch so the arm64 and x64 archives never collide.
         id: vcpkg-cache
         uses: actions/cache/restore@v4
         with:
           path: ~/.cache/vcpkg/archives
-          key: vcpkg-${{ runner.os }}-a0400024-${{ hashFiles('vcpkg.json') }}
+          key: vcpkg-${{ runner.os }}-${{ matrix.arch }}-a0400024-${{ hashFiles('vcpkg.json') }}
           restore-keys: |
-            vcpkg-${{ runner.os }}-a0400024-
-            vcpkg-${{ runner.os }}-
+            vcpkg-${{ runner.os }}-${{ matrix.arch }}-a0400024-
+            vcpkg-${{ runner.os }}-${{ matrix.arch }}-
       - name: Setup vcpkg
         run: |
           git clone https://github.com/microsoft/vcpkg "$HOME/vcpkg"
           git -C "$HOME/vcpkg" checkout a0400024711b283056538ac19ced80b91a83c24c
           "$HOME/vcpkg/bootstrap-vcpkg.sh" -disableMetrics
           echo "VCPKG_ROOT=$HOME/vcpkg" >> "$GITHUB_ENV"
-          echo "RR_TRIPLET=arm64-osx" >> "$GITHUB_ENV"
+          echo "RR_TRIPLET=${{ matrix.triplet }}" >> "$GITHUB_ENV"
       - name: Configure & build (static)
         run: |
           cmake --preset release-static
@@ -216,7 +229,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ~/.cache/vcpkg/archives
-          key: vcpkg-${{ runner.os }}-a0400024-${{ hashFiles('vcpkg.json') }}
+          key: vcpkg-${{ runner.os }}-${{ matrix.arch }}-a0400024-${{ hashFiles('vcpkg.json') }}
       - name: Assemble .app bundle
         run: |
           APP="dist/RegionRecord.app"
@@ -227,12 +240,12 @@ jobs:
           file "$APP/Contents/MacOS/RegionRecord"
       - name: Zip and upload
         run: |
-          cd dist && zip -r RegionRecord-macos-arm64.zip RegionRecord.app
+          cd dist && zip -r RegionRecord-macos-${{ matrix.arch }}.zip RegionRecord.app
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: RegionRecord-macos-arm64
-          path: dist/RegionRecord-macos-arm64.zip
+          name: RegionRecord-macos-${{ matrix.arch }}
+          path: dist/RegionRecord-macos-${{ matrix.arch }}.zip
 
   # On tag (v*) pushes, attach the produced artifacts to a GitHub Release.
   # Linux, Windows and macOS all build green and contribute their artifact.
@@ -257,3 +270,4 @@ jobs:
             artifacts/RegionRecord-linux/*
             artifacts/RegionRecord-windows/*
             artifacts/RegionRecord-macos-arm64/*
+            artifacts/RegionRecord-macos-x64/*
