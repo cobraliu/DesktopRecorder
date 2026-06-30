@@ -226,12 +226,17 @@ add_library(rr_ui STATIC
     src/ui/RegionSelectorOverlay.cpp
     src/ui/frame_geometry.cpp
     src/ui/CaptureFrameWindow.cpp
+    src/ui/CaptureExclusion.cpp
     src/ui/icons.cpp
     src/ui/theme.cpp
     src/ui/MainWindow.cpp
 )
 target_include_directories(rr_ui PUBLIC src)
 target_link_libraries(rr_ui PUBLIC rr_app Qt6::Widgets)
+if(WIN32)
+    # SetWindowDisplayAffinity lives in user32.
+    target_link_libraries(rr_ui PUBLIC user32)
+endif()
 
 add_executable(test_overlays tests/app/test_overlays.cpp)
 target_link_libraries(test_overlays PRIVATE rr_ui Qt6::Test)

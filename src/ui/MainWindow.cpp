@@ -1,6 +1,7 @@
 #include "ui/MainWindow.h"
 #include "ui/CountdownOverlay.h"
 #include "ui/CaptureFrameWindow.h"
+#include "ui/CaptureExclusion.h"
 #include "ui/icons.h"
 #include "app/RecordingStore.h"
 #include "app/RecordingController.h"
@@ -303,6 +304,8 @@ void MainWindow::showStopHud(const CaptureRegion& region, bool fullscreen) {
     stopHud_->move(x, y);
     stopHud_->show();
     stopHud_->raise();
+    // Keep the HUD visible to the user but out of the recording (Windows).
+    excludeFromScreenCapture(stopHud_);
 }
 
 void MainWindow::hideStopHud() {
@@ -363,6 +366,8 @@ void MainWindow::onStartClicked() {
         frameRegion_ = captureFrame_->captureRegion();
         pendingRegion_ = frameRegion_;
         captureFrame_->enterRecordingStyle();   // keep the red frame visible to mark that this area is being recorded
+        // Re-apply after the flag change above, which can recreate the native window (Windows).
+        excludeFromScreenCapture(captureFrame_);
     }
 
     hide();                       // hide the main window so it isn't captured

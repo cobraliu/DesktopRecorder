@@ -1,4 +1,5 @@
 #include "ui/CountdownOverlay.h"
+#include "ui/CaptureExclusion.h"
 #include <QTimer>
 #include <QPainter>
 #include <QGuiApplication>
@@ -20,6 +21,8 @@ void CountdownOverlay::start(int seconds) {
     if (QScreen* s = QGuiApplication::primaryScreen())
         setGeometry(s->geometry());
     showFullScreen();
+    // Don't let the countdown overlay leak into an in-progress recording (Windows).
+    excludeFromScreenCapture(this);
     update();
     timer_->start();
 }
