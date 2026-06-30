@@ -15,9 +15,17 @@ if(MSVC AND VCPKG_TARGET_TRIPLET MATCHES "-static$")
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-find_package(Qt6 REQUIRED COMPONENTS Widgets Test)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    # DBus drives the Wayland xdg-desktop-portal ScreenCast handshake.
+    find_package(Qt6 REQUIRED COMPONENTS Widgets Test DBus)
     find_package(X11 REQUIRED)
+    # WaylandFrameSource consumes the PipeWire client library (the screen-capture
+    # stream the compositor hands us). The .pc is provided by the system in the dev
+    # build and by the vcpkg pipewire port under the static toolchain.
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(PIPEWIRE REQUIRED IMPORTED_TARGET libpipewire-0.3)
+else()
+    find_package(Qt6 REQUIRED COMPONENTS Widgets Test)
 endif()
 
 # dev uses system ffmpeg (pkg-config); release-static uses vcpkg's FindFFMPEG
@@ -43,8 +51,11 @@ endif()
 
 # Per-OS screen-capture backend (selected at runtime by rr::createFrameSource).
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    set(PLATFORM_CAPTURE_SRC src/recording/X11FrameSource.cpp)
-    # WaylandFrameSource.cpp is added here in Phase 2.
+    # Both Linux capture backends are compiled in; rr::createFrameSource picks
+    # Wayland (portal+PipeWire) or X11 (XShm) per session at runtime.
+    set(PLATFORM_CAPTURE_SRC
+        src/recording/X11FrameSource.cpp
+        src/recording/WaylandFrameSource.cpp)
 elseif(WIN32)
     set(PLATFORM_CAPTURE_SRC src/recording/WindowsFrameSource.cpp)
 elseif(APPLE)
@@ -67,6 +78,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     # unavailable in the static build, so we grab pixels ourselves.
     target_include_directories(rr_core PUBLIC ${X11_INCLUDE_DIR})
     target_link_libraries(rr_core PUBLIC ${X11_LIBRARIES} ${X11_Xext_LIB})
+    # WaylandFrameSource: portal handshake over QtDBus + PipeWire client stream.
+    target_link_libraries(rr_core PUBLIC Qt6::DBus PkgConfig::PIPEWIRE)
 elseif(WIN32)
     # WindowsFrameSource captures via GDI BitBlt into a DIB section; AudioSource
     # captures via WASAPI (COM), which needs ole32 for CoCreateInstance/CoTaskMemFree.
@@ -82,6 +95,13 @@ else()
 endif()
 target_include_directories(RegionRecord PRIVATE src)
 target_link_libraries(RegionRecord PRIVATE rr_ui)
+# Static builds reference QWaylandIntegrationPlugin via Q_IMPORT_PLUGIN (main.cpp);
+# link the plugin's static lib so the symbol resolves. qtwayland provides this
+# target only in the static vcpkg build; the dev (shared) build loads plugins at
+# runtime and compiles the import out (no QT_STATIC), so the guard skips it.
+if(TARGET Qt6::QWaylandIntegrationPlugin)
+    target_link_libraries(RegionRecord PRIVATE Qt6::QWaylandIntegrationPlugin)
+endif()
 
 add_executable(ui_snapshot tools/ui_snapshot.cpp)
 target_include_directories(ui_snapshot PRIVATE src)

@@ -5,6 +5,8 @@
   "dependencies": [
     { "name": "ffmpeg", "features": ["x264"] },
     { "name": "ffmpeg", "platform": "linux", "features": ["avdevice", "alsa"] },
+    { "name": "pipewire", "platform": "linux" },
+    { "name": "qtwayland", "platform": "linux" },
     {
       "name": "qtbase",
       "default-features": false,
@@ -32,6 +34,7 @@
         "dbus",
         "egl",
         "fontconfig",
+        "wayland",
         "xcb",
         "xcb-sm",
         "xcb-xlib",

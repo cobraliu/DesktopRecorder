@@ -17,12 +17,31 @@ It was built to replace tools that freeze when you stop recording: RegionRecord 
 ## Platform support
 
 - **Linux / X11** — fully supported (capture via X11 + MIT-SHM, no external FFmpeg device).
-- **Windows / macOS** — UI and reveal-in-folder logic are cross-platform; capture backends are planned.
-- Wayland capture is under investigation (the current path is X11-only).
+- **Linux / Wayland** — capture via `xdg-desktop-portal` ScreenCast + PipeWire (see below).
+- **Windows / macOS** — capture, hotkey, window-pick, and audio backends are implemented;
+  runtime verification on real hardware is ongoing.
+
+### Wayland notes
+
+On a native Wayland session, X11 grabbing only sees XWayland and reads back black, so
+the backend is selected at runtime: when `WAYLAND_DISPLAY` is set (or
+`XDG_SESSION_TYPE=wayland`), capture goes through `xdg-desktop-portal`'s ScreenCast
+interface and a PipeWire video stream; otherwise the X11 + MIT-SHM path is used.
+
+- The compositor shows **its own consent picker** when recording starts — you choose which
+  output to share. The drag-selected rectangle is then **cropped client-side** within that
+  output (the portal does not grant arbitrary screen rectangles).
+- The click-through capture frame (`setMask` hole) and the global stop hotkey (`XGrabKey`)
+  are X11-only mechanisms; on Wayland the floating **Stop HUD** remains the reliable stop path.
+- **Audio** uses the same ALSA input device as X11; on PipeWire desktops ALSA is routed
+  through `pipewire-alsa`, so no separate Wayland audio backend is needed.
+- The PipeWire **client** library is linked into the single binary; it connects to the
+  session's PipeWire daemon at runtime, just as the X11 backend connects to the X server.
 
 ## Building
 
-Requirements: CMake ≥ 3.21, a C++17 compiler, Qt 6, and FFMPEG (libav*).
+Requirements: CMake ≥ 3.21, a C++17 compiler, Qt 6 (incl. Qt DBus), FFMPEG (libav*), and —
+for the Wayland capture backend — the PipeWire client headers (`libpipewire-0.3-dev`).
 
 ### Development build (system Qt + FFmpeg)
 
