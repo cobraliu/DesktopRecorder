@@ -1,5 +1,5 @@
 #include "recording/Recorder.h"
-#include "recording/X11FrameSource.h"
+#include "recording/FrameSource.h"
 #include "recording/AudioSource.h"
 #include "recording/Mp4Encoder.h"
 
@@ -35,11 +35,12 @@ void Recorder::stop() {
 }
 
 void Recorder::runLoop(CaptureRegion region, OutputOptions options) {
-    X11FrameSource source;
-    if (!source.open(region, options.fps)) {
+    auto sourcePtr = createFrameSource();
+    if (!sourcePtr || !sourcePtr->open(region, options.fps)) {
         emit error(QStringLiteral("Failed to open screen capture source"));
         return;
     }
+    FrameSource& source = *sourcePtr;
 
     // Optional audio: open the capture source first, then configure the encoder from its parameters (must be before encoder.open)
     AudioSource audio;

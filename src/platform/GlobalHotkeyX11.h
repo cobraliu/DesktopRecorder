@@ -11,7 +11,7 @@ class GlobalHotkeyX11 : public GlobalHotkey {
 public:
     explicit GlobalHotkeyX11(QObject* parent = nullptr);
     ~GlobalHotkeyX11() override;
-    bool registerHotkey(int id, bool ctrl, bool alt, bool shift, int x11keysym) override;
+    bool registerHotkey(int id, bool ctrl, bool alt, bool shift, int key) override;
     void unregisterAll() override;
 private:
     struct Binding { int id; unsigned int keycode; unsigned int mods; };

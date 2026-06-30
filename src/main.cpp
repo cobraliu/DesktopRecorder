@@ -4,6 +4,7 @@
 #include <QStyleFactory>
 #include "ui/MainWindow.h"
 #include "ui/theme.h"
+#include "ui/icons.h"
 
 #if defined(QT_STATIC)
 #include <QtPlugin>
@@ -44,6 +45,7 @@ int main(int argc, char** argv) {
     QApplication app(argc, argv);
     QApplication::setApplicationName(QStringLiteral("RegionRecord"));
     QApplication::setOrganizationName(QStringLiteral("insnap"));
+    QApplication::setWindowIcon(rr::appIcon());
     applyDarkTheme(app);
     rr::MainWindow w;
     w.show();

@@ -11,6 +11,14 @@ namespace rr {
 static bool g_grabError = false;
 static int grabErrorHandler(Display*, XErrorEvent*) { g_grabError = true; return 0; }
 
+// Map a platform-neutral Qt::Key to an X11 keysym for the keys we support.
+static KeySym qtKeyToKeysym(int key) {
+    if (key >= Qt::Key_A && key <= Qt::Key_Z)   return XK_a  + (key - Qt::Key_A);
+    if (key >= Qt::Key_0 && key <= Qt::Key_9)   return XK_0  + (key - Qt::Key_0);
+    if (key >= Qt::Key_F1 && key <= Qt::Key_F35) return XK_F1 + (key - Qt::Key_F1);
+    return NoSymbol;
+}
+
 GlobalHotkeyX11::GlobalHotkeyX11(QObject* parent) : GlobalHotkey(parent) {
     dpy_ = XOpenDisplay(nullptr);
     if (dpy_) root_ = DefaultRootWindow(static_cast<Display*>(dpy_));
@@ -21,14 +29,16 @@ GlobalHotkeyX11::~GlobalHotkeyX11() {
     if (dpy_) { XCloseDisplay(static_cast<Display*>(dpy_)); dpy_ = nullptr; }
 }
 
-bool GlobalHotkeyX11::registerHotkey(int id, bool ctrl, bool alt, bool shift, int x11keysym) {
+bool GlobalHotkeyX11::registerHotkey(int id, bool ctrl, bool alt, bool shift, int key) {
     if (!dpy_) return false;
     Display* d = static_cast<Display*>(dpy_);
     unsigned int mods = 0;
     if (ctrl)  mods |= ControlMask;
     if (alt)   mods |= Mod1Mask;
     if (shift) mods |= ShiftMask;
-    const KeyCode kc = XKeysymToKeycode(d, static_cast<KeySym>(x11keysym));
+    const KeySym sym = qtKeyToKeysym(key);
+    if (sym == NoSymbol) return false;
+    const KeyCode kc = XKeysymToKeycode(d, sym);
     if (kc == 0) return false;
 
     // owner_events=False: grabbed key events are always reported to grab_window(root), making global hotkeys more reliable.

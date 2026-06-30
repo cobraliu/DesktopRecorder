@@ -1,6 +1,7 @@
 #pragma once
 #include <vector>
 #include <cstdint>
+#include <memory>
 #include "recording/types.h"
 
 namespace rr {
@@ -13,4 +14,8 @@ public:
     virtual int width() const = 0;
     virtual int height() const = 0;
 };
+
+// Creates the screen-capture backend for the current platform/session.
+// Returns nullptr on platforms without a backend yet (callers must null-check).
+std::unique_ptr<FrameSource> createFrameSource();
 }

@@ -3,14 +3,13 @@
   "version": "0.1.0",
   "builtin-baseline": "a0400024711b283056538ac19ced80b91a83c24c",
   "dependencies": [
-    { "name": "ffmpeg", "features": ["x264", "avdevice"] },
-    { "name": "ffmpeg", "platform": "linux", "features": ["alsa"] },
+    { "name": "ffmpeg", "features": ["x264"] },
+    { "name": "ffmpeg", "platform": "linux", "features": ["avdevice", "alsa"] },
     {
       "name": "qtbase",
       "default-features": false,
       "features": [
         "concurrent",
-        "dbus",
         "doubleconversion",
         "freetype",
         "gui",
@@ -30,6 +29,7 @@
       "platform": "linux",
       "default-features": false,
       "features": [
+        "dbus",
         "egl",
         "fontconfig",
         "xcb",

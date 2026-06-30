@@ -1,7 +1,6 @@
 #include <QtTest>
 #include <cstdlib>
 #include "platform/GlobalHotkeyX11.h"
-#include <X11/keysym.h>
 
 class TestGlobalHotkey : public QObject {
     Q_OBJECT
@@ -16,7 +15,7 @@ void TestGlobalHotkey::registerAndUnregister() {
     // Use a rare combo (Ctrl+Alt+Shift+F12) to reduce the chance of conflicting with the desktop environment;
     // registerHotkey now actually probes for BadAccess (returns false if already grabbed),
     // so if the combo is also taken in the current environment, skip rather than fail.
-    if (!hk.registerHotkey(1, true, true, true, XK_F12))
+    if (!hk.registerHotkey(1, true, true, true, Qt::Key_F12))
         QSKIP("hotkey combo already grabbed in this environment");
     QTest::qWait(100);
     hk.unregisterAll(); // passes as long as it does not crash

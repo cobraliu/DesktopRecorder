@@ -4,9 +4,11 @@ set -euo pipefail
 # Usage: build-appimage.sh [path to static binary]
 # Output: dist/RegionRecord-x86_64.AppImage (self-contained, zero external Qt/libav dependencies)
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BIN="${1:-build-static/RegionRecord}"
 OUT_DIR="dist"
 APPDIR="${OUT_DIR}/RegionRecord.AppDir"
+ICON_PNG="${SCRIPT_DIR}/../icon/RegionRecord.png"
 
 if [ ! -x "${BIN}" ]; then
   echo "error: static binary not found: ${BIN}" >&2
@@ -27,11 +29,12 @@ Categories=AudioVideo;
 Terminal=false
 EOF
 
-# Placeholder icon: a valid 64x64 solid-color PNG (linuxdeploy validates that the icon
-# is a real image; a 0-byte or corrupt file fails). The final icon is planned to replace this later.
-base64 -d > "${APPDIR}/regionrecord.png" <<'EOF'
-iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAAZUlEQVR42u3QQREAAAQAMIVEVERZcjh7rMAiq+ezECBAgAABAgQIECBAgAABAgQIECBAgAABAgQIECBAgAABAgQIECBAgAABAgQIECBAgAABAgQIECBAgAABAgQIECBAgAABAu5byNsyHWWWRfkAAAAASUVORK5CYII=
-EOF
+# App icon: the 256px PNG generated from rr::renderAppIcon (packaging/icon/generate.sh).
+if [ ! -f "${ICON_PNG}" ]; then
+  echo "error: icon not found: ${ICON_PNG} (run packaging/icon/generate.sh)" >&2
+  exit 1
+fi
+cp "${ICON_PNG}" "${APPDIR}/regionrecord.png"
 
 # Download linuxdeploy (only needed once)
 TOOL="${OUT_DIR}/linuxdeploy-x86_64.AppImage"

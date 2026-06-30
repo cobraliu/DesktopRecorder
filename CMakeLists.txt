@@ -5,8 +5,20 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 
+# vcpkg's *-windows-static triplets build every dependency against the static CRT (/MT).
+# MSVC compiles our own translation units against the dynamic CRT (/MD) by default, so
+# linking our objects to the static-CRT libs fails with LNK2038/LNK2005. Match the triplet
+# (static CRT) so the runtimes agree AND the executable carries no dependency on the VC++
+# runtime DLLs, preserving the single self-contained static binary. CMP0091 (NEW since the
+# 3.21 floor we require) makes this the runtime-selection mechanism and drops the /MD default.
+if(MSVC AND VCPKG_TARGET_TRIPLET MATCHES "-static$")
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
+
 find_package(Qt6 REQUIRED COMPONENTS Widgets Test)
-find_package(X11 REQUIRED)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    find_package(X11 REQUIRED)
+endif()
 
 # dev uses system ffmpeg (pkg-config); release-static uses vcpkg's FindFFMPEG
 find_package(PkgConfig)
@@ -29,26 +41,56 @@ else()
     endif()
 endif()
 
+# Per-OS screen-capture backend (selected at runtime by rr::createFrameSource).
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(PLATFORM_CAPTURE_SRC src/recording/X11FrameSource.cpp)
+    # WaylandFrameSource.cpp is added here in Phase 2.
+elseif(WIN32)
+    set(PLATFORM_CAPTURE_SRC src/recording/WindowsFrameSource.cpp)
+elseif(APPLE)
+    set(PLATFORM_CAPTURE_SRC)  # MacFrameSource.mm: Phase 4
+endif()
+
 add_library(rr_core STATIC
     src/ffmpeg_probe.cpp
     src/recording/types.cpp
     src/recording/Mp4Encoder.cpp
-    src/recording/X11FrameSource.cpp
+    src/recording/FrameSource.cpp
+    ${PLATFORM_CAPTURE_SRC}
     src/recording/AudioSource.cpp
     src/recording/Recorder.cpp
 )
-target_include_directories(rr_core PUBLIC src ${X11_INCLUDE_DIR})
-# X11FrameSource captures via libX11 + MIT-SHM (libXext); FFmpeg's x11grab is
-# unavailable in the static build, so we grab pixels ourselves.
-target_link_libraries(rr_core PUBLIC rr_ffmpeg Qt6::Core ${X11_LIBRARIES} ${X11_Xext_LIB})
+target_include_directories(rr_core PUBLIC src)
+target_link_libraries(rr_core PUBLIC rr_ffmpeg Qt6::Core)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    # X11FrameSource captures via libX11 + MIT-SHM (libXext); FFmpeg's x11grab is
+    # unavailable in the static build, so we grab pixels ourselves.
+    target_include_directories(rr_core PUBLIC ${X11_INCLUDE_DIR})
+    target_link_libraries(rr_core PUBLIC ${X11_LIBRARIES} ${X11_Xext_LIB})
+elseif(WIN32)
+    # WindowsFrameSource captures via GDI BitBlt into a DIB section; AudioSource
+    # captures via WASAPI (COM), which needs ole32 for CoCreateInstance/CoTaskMemFree.
+    target_link_libraries(rr_core PUBLIC gdi32 user32 ole32)
+endif()
 
-add_executable(RegionRecord src/main.cpp)
+# On Windows, WIN32 makes it a GUI app (no console window) and the .rc embeds the
+# Explorer/taskbar icon. The runtime window icon is set in code for every OS.
+if(WIN32)
+    add_executable(RegionRecord WIN32 src/main.cpp packaging/windows/RegionRecord.rc)
+else()
+    add_executable(RegionRecord src/main.cpp)
+endif()
 target_include_directories(RegionRecord PRIVATE src)
 target_link_libraries(RegionRecord PRIVATE rr_ui)
 
 add_executable(ui_snapshot tools/ui_snapshot.cpp)
 target_include_directories(ui_snapshot PRIVATE src)
 target_link_libraries(ui_snapshot PRIVATE rr_ui)
+
+# Dev tool: export the app icon to PNGs for packaging (.ico/.icns/.png).
+add_executable(render_icon tools/render_icon.cpp)
+target_include_directories(render_icon PRIVATE src)
+target_link_libraries(render_icon PRIVATE rr_ui)
 
 enable_testing()
 add_executable(test_ffmpeg_probe tests/test_ffmpeg_probe.cpp)
@@ -67,9 +109,11 @@ add_executable(test_mp4_encoder tests/recording/test_mp4_encoder.cpp)
 target_link_libraries(test_mp4_encoder PRIVATE rr_core rr_core_test_util Qt6::Test)
 add_test(NAME test_mp4_encoder COMMAND test_mp4_encoder)
 
-add_executable(test_x11_source tests/recording/test_x11_source.cpp)
-target_link_libraries(test_x11_source PRIVATE rr_core rr_core_test_util Qt6::Test)
-add_test(NAME test_x11_source COMMAND test_x11_source)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_executable(test_x11_source tests/recording/test_x11_source.cpp)
+    target_link_libraries(test_x11_source PRIVATE rr_core rr_core_test_util Qt6::Test)
+    add_test(NAME test_x11_source COMMAND test_x11_source)
+endif()
 
 add_executable(test_recorder tests/recording/test_recorder.cpp)
 target_link_libraries(test_recorder PRIVATE rr_core rr_core_test_util Qt6::Test)
@@ -80,19 +124,38 @@ target_link_libraries(test_audio_source PRIVATE rr_core rr_core_test_util Qt6::T
 add_test(NAME test_audio_source COMMAND test_audio_source)
 
 # ---- Application core library rr_app (business logic, depends on Qt6::Core + rr_core) ----
+# Per-OS hotkey + window-picker backends (selected at runtime by the factories).
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(PLATFORM_HOTKEY_SRC src/platform/GlobalHotkeyX11.cpp)
+    set(PLATFORM_PICKER_SRC src/platform/WindowPickerX11.cpp)
+elseif(WIN32)
+    set(PLATFORM_HOTKEY_SRC src/platform/GlobalHotkeyWindows.cpp)
+    set(PLATFORM_PICKER_SRC src/platform/WindowPickerWindows.cpp)
+    # macOS backends (GlobalHotkeyMac, WindowPickerMac) land in Phase 4.
+endif()
+
 add_library(rr_app STATIC
     src/app/RecordingItem.cpp
     src/app/RecordingStore.cpp
     src/app/RegionPresets.cpp
     src/app/HotkeyCombo.cpp
     src/app/RecordingController.cpp
-    src/platform/GlobalHotkeyX11.cpp
     src/platform/GlobalHotkey.h
-    src/platform/WindowPickerX11.cpp
+    src/platform/GlobalHotkeyFactory.cpp
+    src/platform/WindowPickerFactory.cpp
+    ${PLATFORM_HOTKEY_SRC}
+    ${PLATFORM_PICKER_SRC}
 )
 target_include_directories(rr_app PUBLIC src)
-target_link_libraries(rr_app PUBLIC Qt6::Core rr_core ${X11_LIBRARIES})
-target_include_directories(rr_app PUBLIC ${X11_INCLUDE_DIR})
+target_link_libraries(rr_app PUBLIC Qt6::Core rr_core)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_link_libraries(rr_app PUBLIC ${X11_LIBRARIES})
+    target_include_directories(rr_app PUBLIC ${X11_INCLUDE_DIR})
+elseif(WIN32)
+    # GlobalHotkeyWindows (RegisterHotKey/GetMessage) and WindowPickerWindows
+    # (WindowFromPoint/GetWindowRect/cursor) both use the Win32 user32 API.
+    target_link_libraries(rr_app PUBLIC user32)
+endif()
 
 add_executable(test_recording_item tests/app/test_recording_item.cpp)
 target_link_libraries(test_recording_item PRIVATE rr_app Qt6::Test)
@@ -114,9 +177,11 @@ add_executable(test_recording_controller tests/app/test_recording_controller.cpp
 target_link_libraries(test_recording_controller PRIVATE rr_app rr_core_test_util Qt6::Test)
 add_test(NAME test_recording_controller COMMAND test_recording_controller)
 
-add_executable(test_global_hotkey tests/app/test_global_hotkey.cpp)
-target_link_libraries(test_global_hotkey PRIVATE rr_app Qt6::Test)
-add_test(NAME test_global_hotkey COMMAND test_global_hotkey)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_executable(test_global_hotkey tests/app/test_global_hotkey.cpp)
+    target_link_libraries(test_global_hotkey PRIVATE rr_app Qt6::Test)
+    add_test(NAME test_global_hotkey COMMAND test_global_hotkey)
+endif()
 
 # ---- GUI widget library rr_ui (depends on Widgets) ----
 add_library(rr_ui STATIC

@@ -95,16 +95,13 @@ jobs:
             dist/RegionRecord-x86_64-linux
 
   # ---------------------------------------------------------------------------
-  # Windows / macOS jobs: scaffolding is ready, but currently disabled via `if: false`.
-  # Reason: the recording and global hotkey backends are currently Linux-only
-  # (src/recording/X11FrameSource.cpp, src/platform/GlobalHotkeyX11.cpp), and the
-  # top-level CMakeLists `find_package(X11 REQUIRED)` fails to configure on non-Linux
-  # platforms. The spec explicitly schedules the Win/mac platform backends for phase two.
-  # Once phase two adds DXGI/AVFoundation screen capture + per-platform hotkeys and makes
-  # the X11 dependency conditional, removing the `if: false` from the two jobs below enables them.
+  # build-windows is enabled: the Windows backends (GDI capture, RegisterHotKey,
+  # window picker, WASAPI audio) are implemented and CMake configures on Windows.
+  # This job is compile-only verification; runtime correctness is checked by the
+  # user on real hardware. build-macos stays disabled (if: false) until its
+  # ScreenCaptureKit/AVFoundation backends land (Phase 4).
   # ---------------------------------------------------------------------------
   build-windows:
-    if: false
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -114,11 +111,27 @@ jobs:
             core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
             core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
       - uses: lukka/get-cmake@latest
+      - name: Restore vcpkg binary archives
+        # Persist built packages (ffmpeg, x264, qtbase, ...) so iterative CI fixes
+        # don't rebuild everything. Windows' default files cache lives under LOCALAPPDATA.
+        # Split restore/save (not the combined action) so the Save step below can run with
+        # if: always() — the combined actions/cache skips its post-save when the job fails,
+        # which would discard the ~90-min Qt/FFmpeg compile every time our build step errors.
+        id: vcpkg-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~\AppData\Local\vcpkg\archives
+          key: vcpkg-${{ runner.os }}-a0400024-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            vcpkg-${{ runner.os }}-a0400024-
+            vcpkg-${{ runner.os }}-
       - name: Setup vcpkg
         shell: bash
         run: |
           git clone https://github.com/microsoft/vcpkg "$HOME/vcpkg"
-          "$HOME/vcpkg/bootstrap-vcpkg.bat"
+          # Pin to the builtin-baseline commit so CI installs the same versions.
+          git -C "$HOME/vcpkg" checkout a0400024711b283056538ac19ced80b91a83c24c
+          "$HOME/vcpkg/bootstrap-vcpkg.bat" -disableMetrics
           echo "VCPKG_ROOT=$HOME/vcpkg" >> "$GITHUB_ENV"
           echo "RR_TRIPLET=x64-windows-static" >> "$GITHUB_ENV"
       - uses: ilammy/msvc-dev-cmd@v1
@@ -127,6 +140,22 @@ jobs:
         run: |
           cmake --preset release-static
           cmake --build --preset release-static
+      - name: Dump vcpkg logs on failure
+        if: failure()
+        shell: bash
+        run: |
+          echo "=== vcpkg-manifest-install.log ==="
+          cat build-static/vcpkg-manifest-install.log 2>/dev/null || true
+          echo "=== port build error logs ==="
+          find "$HOME/vcpkg/buildtrees" -name '*-err.log' -print -exec tail -40 {} \; 2>/dev/null | head -300 || true
+      - name: Save vcpkg binary archives
+        # Save even when the build step fails so the expensive Qt/FFmpeg compile is cached for
+        # the next run. Skip when the restore was an exact hit (the key already holds the data).
+        if: always() && steps.vcpkg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~\AppData\Local\vcpkg\archives
+          key: vcpkg-${{ runner.os }}-a0400024-${{ hashFiles('vcpkg.json') }}
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -160,8 +189,9 @@ jobs:
       - name: Assemble universal .app
         run: |
           APP="dist/RegionRecord.app"
-          mkdir -p "$APP/Contents/MacOS"
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
           cp packaging/macos/Info.plist "$APP/Contents/Info.plist"
+          cp packaging/icon/RegionRecord.icns "$APP/Contents/Resources/RegionRecord.icns"
           lipo -create build-arm64/RegionRecord build-x64/RegionRecord \
             -output "$APP/Contents/MacOS/RegionRecord"
           lipo -info "$APP/Contents/MacOS/RegionRecord"
@@ -175,9 +205,9 @@ jobs:
           path: dist/RegionRecord-macos.zip
 
   # On tag (v*) pushes, attach the produced artifacts to a GitHub Release.
-  # Only Linux can be built for now, so this depends only on build-linux; once Win/mac are enabled, add them to needs and files.
+  # Linux and Windows build green; macOS is added to needs/files once build-macos lands (Phase 4).
   release:
-    needs: [ build-linux ]
+    needs: [ build-linux, build-windows ]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
@@ -195,3 +225,4 @@ jobs:
           fail_on_unmatched_files: true
           files: |
             artifacts/RegionRecord-linux/*
+            artifacts/RegionRecord-windows/*
