@@ -39,7 +39,8 @@ jobs:
             libgl1-mesa-dev libegl1-mesa-dev libxkbcommon-dev libxkbcommon-x11-dev \
             '^libxcb.*-dev' libx11-xcb-dev libxext-dev libxfixes-dev libxdamage-dev \
             libxrender-dev libxi-dev libxtst-dev libfontconfig1-dev libfreetype-dev \
-            libdbus-1-dev libpulse-dev libasound2-dev libsm-dev libice-dev
+            libdbus-1-dev libpulse-dev libasound2-dev libsm-dev libice-dev \
+            libwayland-dev libwayland-bin wayland-protocols
       - name: Cache vcpkg binary archives
         # Persist built packages (ffmpeg, x264, qtbase, ...) so iterative CI fixes don't
         # rebuild everything (~35 min). Key on the manifest + pinned baseline.
