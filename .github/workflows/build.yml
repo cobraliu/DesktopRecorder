@@ -162,8 +162,12 @@ jobs:
           name: RegionRecord-windows
           path: build-static/RegionRecord.exe
 
+  # build-macos is enabled: the macOS backends (Quartz CGDisplay capture, Carbon hotkey,
+  # CGWindowList picker, CoreAudio AudioQueue) are implemented and CMake configures on macOS.
+  # Compile-only verification; runtime correctness is checked by the user on real hardware.
+  # Builds a single native arm64 slice (matches the macos-14 runner); a universal (lipo)
+  # build is a follow-up. The release job gains macOS once this is proven green.
   build-macos:
-    if: false
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
@@ -173,28 +177,53 @@ jobs:
             core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
             core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
       - uses: lukka/get-cmake@latest
+      - name: Install build deps (vcpkg toolchain)
+        # nasm for x264 asm; autotools + pkg-config + gperf for the ffmpeg/qtbase build chain.
+        run: |
+          brew install nasm autoconf automake autoconf-archive libtool pkg-config gperf
+          python3 -m pip install --break-system-packages jinja2 || pip3 install jinja2 || true
+      - name: Restore vcpkg binary archives
+        # Split restore/save so the Save step can run with if: always() (see build-windows).
+        id: vcpkg-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/vcpkg/archives
+          key: vcpkg-${{ runner.os }}-a0400024-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            vcpkg-${{ runner.os }}-a0400024-
+            vcpkg-${{ runner.os }}-
       - name: Setup vcpkg
         run: |
           git clone https://github.com/microsoft/vcpkg "$HOME/vcpkg"
+          git -C "$HOME/vcpkg" checkout a0400024711b283056538ac19ced80b91a83c24c
           "$HOME/vcpkg/bootstrap-vcpkg.sh" -disableMetrics
           echo "VCPKG_ROOT=$HOME/vcpkg" >> "$GITHUB_ENV"
-      - name: Build arm64
+          echo "RR_TRIPLET=arm64-osx" >> "$GITHUB_ENV"
+      - name: Configure & build (static)
         run: |
-          RR_TRIPLET=arm64-osx cmake --preset release-static -B build-arm64
-          cmake --build build-arm64
-      - name: Build x86_64
+          cmake --preset release-static
+          cmake --build --preset release-static
+      - name: Dump vcpkg logs on failure
+        if: failure()
         run: |
-          RR_TRIPLET=x64-osx cmake --preset release-static -B build-x64
-          cmake --build build-x64
-      - name: Assemble universal .app
+          echo "=== vcpkg-manifest-install.log ==="
+          cat build-static/vcpkg-manifest-install.log 2>/dev/null || true
+          echo "=== port build error logs ==="
+          find "$HOME/vcpkg/buildtrees" -name '*-err.log' -print -exec tail -40 {} \; 2>/dev/null | head -300 || true
+      - name: Save vcpkg binary archives
+        if: always() && steps.vcpkg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.cache/vcpkg/archives
+          key: vcpkg-${{ runner.os }}-a0400024-${{ hashFiles('vcpkg.json') }}
+      - name: Assemble .app bundle
         run: |
           APP="dist/RegionRecord.app"
           mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
           cp packaging/macos/Info.plist "$APP/Contents/Info.plist"
           cp packaging/icon/RegionRecord.icns "$APP/Contents/Resources/RegionRecord.icns"
-          lipo -create build-arm64/RegionRecord build-x64/RegionRecord \
-            -output "$APP/Contents/MacOS/RegionRecord"
-          lipo -info "$APP/Contents/MacOS/RegionRecord"
+          cp build-static/RegionRecord "$APP/Contents/MacOS/RegionRecord"
+          file "$APP/Contents/MacOS/RegionRecord"
       - name: Zip and upload
         run: |
           cd dist && zip -r RegionRecord-macos.zip RegionRecord.app

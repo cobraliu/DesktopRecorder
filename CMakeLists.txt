@@ -15,6 +15,13 @@ if(MSVC AND VCPKG_TARGET_TRIPLET MATCHES "-static$")
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
+# macOS backends are Objective-C++ (.mm): screen capture (Quartz/CoreGraphics), global
+# hotkey (Carbon), and window picker (CGWindowList). Enable the language so CMake compiles
+# .mm sources with the Objective-C++ frontend.
+if(APPLE)
+    enable_language(OBJCXX)
+endif()
+
 find_package(Qt6 REQUIRED COMPONENTS Widgets Test)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     find_package(X11 REQUIRED)
@@ -48,7 +55,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
 elseif(WIN32)
     set(PLATFORM_CAPTURE_SRC src/recording/WindowsFrameSource.cpp)
 elseif(APPLE)
-    set(PLATFORM_CAPTURE_SRC)  # MacFrameSource.mm: Phase 4
+    set(PLATFORM_CAPTURE_SRC src/recording/MacFrameSource.mm)
 endif()
 
 add_library(rr_core STATIC
@@ -71,6 +78,10 @@ elseif(WIN32)
     # WindowsFrameSource captures via GDI BitBlt into a DIB section; AudioSource
     # captures via WASAPI (COM), which needs ole32 for CoCreateInstance/CoTaskMemFree.
     target_link_libraries(rr_core PUBLIC gdi32 user32 ole32)
+elseif(APPLE)
+    # MacFrameSource captures via Quartz (CoreGraphics); AudioSource via a CoreAudio
+    # AudioQueue (AudioToolbox). CoreFoundation backs the CF types both use.
+    target_link_libraries(rr_core PUBLIC "-framework CoreGraphics" "-framework CoreFoundation" "-framework AudioToolbox")
 endif()
 
 # On Windows, WIN32 makes it a GUI app (no console window) and the .rc embeds the
@@ -131,7 +142,9 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
 elseif(WIN32)
     set(PLATFORM_HOTKEY_SRC src/platform/GlobalHotkeyWindows.cpp)
     set(PLATFORM_PICKER_SRC src/platform/WindowPickerWindows.cpp)
-    # macOS backends (GlobalHotkeyMac, WindowPickerMac) land in Phase 4.
+elseif(APPLE)
+    set(PLATFORM_HOTKEY_SRC src/platform/GlobalHotkeyMac.mm)
+    set(PLATFORM_PICKER_SRC src/platform/WindowPickerMac.mm)
 endif()
 
 add_library(rr_app STATIC
@@ -155,6 +168,10 @@ elseif(WIN32)
     # GlobalHotkeyWindows (RegisterHotKey/GetMessage) and WindowPickerWindows
     # (WindowFromPoint/GetWindowRect/cursor) both use the Win32 user32 API.
     target_link_libraries(rr_app PUBLIC user32)
+elseif(APPLE)
+    # GlobalHotkeyMac uses Carbon (RegisterEventHotKey); WindowPickerMac uses CoreGraphics
+    # (CGWindowList/CGEvent). CoreFoundation backs the CF types.
+    target_link_libraries(rr_app PUBLIC "-framework Carbon" "-framework CoreGraphics" "-framework CoreFoundation")
 endif()
 
 add_executable(test_recording_item tests/app/test_recording_item.cpp)
