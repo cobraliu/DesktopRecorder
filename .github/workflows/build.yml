@@ -182,9 +182,11 @@ jobs:
           - runner: macos-14
             arch: arm64
             triplet: arm64-osx
+            osx_arch: arm64
           - runner: macos-14
             arch: x64
             triplet: x64-osx
+            osx_arch: x86_64
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
@@ -218,8 +220,11 @@ jobs:
           echo "VCPKG_ROOT=$HOME/vcpkg" >> "$GITHUB_ENV"
           echo "RR_TRIPLET=${{ matrix.triplet }}" >> "$GITHUB_ENV"
       - name: Configure & build (static)
+        # Pin CMAKE_OSX_ARCHITECTURES so our own targets match the vcpkg slice's arch. Without
+        # this the top-level project defaults to the host arch (arm64) and fails to link against
+        # the cross-compiled x86_64 vcpkg libraries.
         run: |
-          cmake --preset release-static
+          cmake --preset release-static -DCMAKE_OSX_ARCHITECTURES=${{ matrix.osx_arch }}
           cmake --build --preset release-static
       - name: Dump vcpkg logs on failure
         if: failure()
