@@ -20,7 +20,16 @@ void CountdownOverlay::start(int seconds) {
     remaining_ = seconds;
     if (QScreen* s = QGuiApplication::primaryScreen())
         setGeometry(s->geometry());
+#if defined(Q_OS_MACOS)
+    // showFullScreen() on macOS enters a native fullscreen Space and renders this translucent
+    // Tool window as an opaque black surface (which can also linger into the recording). Show it
+    // as a plain borderless top-level sized to the screen instead, so the dimming stays
+    // translucent. X11/Windows keep showFullScreen(), where it is verified to work.
+    show();
+    raise();
+#else
     showFullScreen();
+#endif
     // Don't let the countdown overlay leak into an in-progress recording (Windows).
     excludeFromScreenCapture(this);
     update();
