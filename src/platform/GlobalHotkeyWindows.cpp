@@ -34,7 +34,16 @@ bool GlobalHotkeyWindows::registerHotkey(int id, bool ctrl, bool alt, bool shift
     std::future<bool> fut = ready.get_future();
     running_.store(true);
     thread_ = std::thread([this, r = std::move(ready)]() mutable { runLoop(std::move(r)); });
-    return fut.get();  // whether RegisterHotKey succeeded on the worker thread
+    const bool ok = fut.get();  // whether RegisterHotKey succeeded on the worker thread
+    if (!ok) {
+        // The worker exits on failure (see runLoop); reap it and drop the dead
+        // binding so a later registration attempt starts clean instead of being
+        // rejected by the running_ guard above.
+        if (thread_.joinable()) thread_.join();
+        threadId_ = 0;
+        bindings_.clear();
+    }
+    return ok;
 }
 
 void GlobalHotkeyWindows::runLoop(std::promise<bool> ready) {
@@ -42,7 +51,15 @@ void GlobalHotkeyWindows::runLoop(std::promise<bool> ready) {
     bool ok = true;
     for (const auto& b : bindings_)
         if (!RegisterHotKey(nullptr, b.id, b.mods, b.vk)) ok = false;
-    ready.set_value(ok);
+    if (!ok) {
+        // Undo any partial registration and exit; parking in GetMessage with
+        // running_ latched true would block every future registerHotkey call.
+        for (const auto& b : bindings_) UnregisterHotKey(nullptr, b.id);
+        running_.store(false);
+        ready.set_value(false);
+        return;
+    }
+    ready.set_value(true);
 
     MSG msg;
     while (running_.load() && GetMessage(&msg, nullptr, 0, 0) > 0) {
