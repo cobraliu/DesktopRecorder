@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <mutex>
 #include <thread>
 
 namespace rr {
@@ -33,11 +34,18 @@ long long nowNs() {
                std::chrono::steady_clock::now().time_since_epoch())
         .count();
 }
+// Xlib's default protocol-error handler prints a message and exits the
+// process. A BadMatch from XShmGetImage (e.g. the screen resolution shrank
+// mid-recording) must degrade to a failed frame, not kill the app. Qt talks
+// to X through xcb, not Xlib, so replacing the Xlib handler is safe here.
+int ignoreXlibError(Display*, XErrorEvent*) { return 0; }
+std::once_flag xlibErrorHandlerOnce;
 }  // namespace
 
 X11FrameSource::~X11FrameSource() { close(); }
 
 bool X11FrameSource::open(const CaptureRegion& region, int fps) {
+    std::call_once(xlibErrorHandlerOnce, [] { XSetErrorHandler(ignoreXlibError); });
     Display* dpy = XOpenDisplay(std::getenv("DISPLAY"));
     if (!dpy) return false;
     dpy_ = dpy;
