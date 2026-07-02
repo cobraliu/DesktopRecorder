@@ -200,6 +200,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     hotkeyOk_ = hotkey_ && hotkey_->registerHotkey(1, true, true, false, Qt::Key_S);
     if (hotkey_)
         connect(hotkey_, &GlobalHotkey::triggered, this, &MainWindow::onStopRequested);
+    countdown_->setHotkeyAvailable(hotkeyOk_);
 
     connect(recordBtn_, &QPushButton::clicked, this, &MainWindow::onStartClicked);
     connect(modeGroup_, &QButtonGroup::idClicked, this, &MainWindow::onModeClicked);

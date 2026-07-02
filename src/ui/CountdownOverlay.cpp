@@ -15,6 +15,10 @@ CountdownOverlay::CountdownOverlay(QWidget* parent) : QWidget(parent) {
     connect(timer_, &QTimer::timeout, this, &CountdownOverlay::tick);
 }
 
+void CountdownOverlay::setHotkeyAvailable(bool available) {
+    hotkeyAvailable_ = available;
+}
+
 void CountdownOverlay::start(int seconds) {
     if (seconds <= 0) { emit countdownFinished(); return; }
     remaining_ = seconds;
@@ -57,7 +61,9 @@ void CountdownOverlay::paintEvent(QPaintEvent*) {
     p.setFont(sf);
     QRect hint = rect(); hint.setTop(rect().center().y() + 140);
     p.drawText(hint, Qt::AlignHCenter | Qt::AlignTop,
-               QStringLiteral("Press Ctrl+Alt+S to stop recording"));
+               hotkeyAvailable_
+                   ? QStringLiteral("Press Ctrl+Alt+S to stop recording")
+                   : QStringLiteral("Use the floating Stop button to stop recording"));
 }
 
 }

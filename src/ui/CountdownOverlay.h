@@ -7,6 +7,8 @@ class CountdownOverlay : public QWidget {
 public:
     explicit CountdownOverlay(QWidget* parent = nullptr);
     void start(int seconds);
+    // Whether the global stop hotkey actually registered; decides the hint text.
+    void setHotkeyAvailable(bool available);
 signals:
     void countdownFinished();
 protected:
@@ -15,6 +17,7 @@ private slots:
     void tick();
 private:
     int remaining_ = 0;
+    bool hotkeyAvailable_ = true;
     QTimer* timer_ = nullptr;
 };
 }
