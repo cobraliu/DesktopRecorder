@@ -48,12 +48,18 @@ void Recorder::runLoop(CaptureRegion region, OutputOptions options) {
         std::lock_guard<std::mutex> lk(sourceMutex_);
         activeSource_ = sourcePtr.get();
     }
+    // Clear activeSource_ on EVERY exit path (the source dies with runLoop, and
+    // stop() may be called later, e.g. from ~Recorder, on a dangling pointer).
+    struct ClearActiveSource {
+        Recorder* r;
+        ~ClearActiveSource() {
+            std::lock_guard<std::mutex> lk(r->sourceMutex_);
+            r->activeSource_ = nullptr;
+        }
+    } clearGuard{this};
+
     if (stopFlag_.load()) sourcePtr->requestStop();  // stop raced ahead of us
     if (!sourcePtr->open(region, options.fps)) {
-        {
-            std::lock_guard<std::mutex> lk(sourceMutex_);
-            activeSource_ = nullptr;
-        }
         emit error(stopFlag_.load()
                        ? QStringLiteral("Recording stopped before capture started")
                        : QStringLiteral("Failed to open screen capture source"));
@@ -98,10 +104,6 @@ void Recorder::runLoop(CaptureRegion region, OutputOptions options) {
     // device produces no data (permission denied, unplugged) the join would never return.
     if (useAudio) audio.requestStop();
     if (audioThread.joinable()) audioThread.join();
-    {
-        std::lock_guard<std::mutex> lk(sourceMutex_);
-        activeSource_ = nullptr;
-    }
     source.close();
     audio.close();
 
