@@ -104,6 +104,7 @@ bool Mp4Encoder::open(int width, int height, int fps, const std::string& path) {
         if (swr_init(swr_) < 0) return false;
 
         aFrame_ = av_frame_alloc();
+        if (!aFrame_) return false;
         aFrame_->nb_samples = aCodec_->frame_size;
         aFrame_->format = AV_SAMPLE_FMT_FLTP;
         av_channel_layout_copy(&aFrame_->ch_layout, &aCodec_->ch_layout);
@@ -111,6 +112,7 @@ bool Mp4Encoder::open(int width, int height, int fps, const std::string& path) {
         if (av_frame_get_buffer(aFrame_, 0) < 0) return false;
 
         aPkt_ = av_packet_alloc();
+        if (!aPkt_) return false;
     }
 
     if (avio_open(&fmt_->pb, path.c_str(), AVIO_FLAG_WRITE) < 0) return false;
@@ -121,12 +123,14 @@ bool Mp4Encoder::open(int width, int height, int fps, const std::string& path) {
     av_dict_free(&opts);
 
     frame_ = av_frame_alloc();
+    if (!frame_) return false;
     frame_->format = AV_PIX_FMT_YUV420P;
     frame_->width = width;
     frame_->height = height;
     if (av_frame_get_buffer(frame_, 0) < 0) return false;
 
     pkt_ = av_packet_alloc();
+    if (!pkt_) return false;
     sws_ = sws_getContext(width, height, AV_PIX_FMT_RGB24,
                           width, height, AV_PIX_FMT_YUV420P,
                           SWS_BILINEAR, nullptr, nullptr, nullptr);
