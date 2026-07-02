@@ -30,10 +30,14 @@ bool WindowsFrameSource::open(const CaptureRegion& region, int fps) {
     const double scale = region.dpiScale > 0 ? region.dpiScale : 1.0;
     const int rx = static_cast<int>(std::lround(region.x * scale));
     const int ry = static_cast<int>(std::lround(region.y * scale));
-    x_ = rx < vx ? vx : rx;
-    y_ = ry < vy ? vy : ry;
     int w = static_cast<int>(std::lround(region.w * scale));
     int h = static_cast<int>(std::lround(region.h * scale));
+    // Clip, don't shift: a region hanging off the virtual screen's top/left
+    // keeps only its on-screen part instead of capturing a displaced rectangle.
+    if (rx < vx) w -= vx - rx;
+    if (ry < vy) h -= vy - ry;
+    x_ = rx < vx ? vx : rx;
+    y_ = ry < vy ? vy : ry;
     if (x_ + w > vx + vw) w = vx + vw - x_;
     if (y_ + h > vy + vh) h = vy + vh - y_;
     if (w <= 0 || h <= 0) return false;

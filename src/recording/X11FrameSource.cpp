@@ -64,10 +64,14 @@ bool X11FrameSource::open(const CaptureRegion& region, int fps) {
     const int ry = static_cast<int>(std::lround(region.y * scale));
     // Clamp the requested region to the screen so XShmGetImage cannot read out
     // of bounds (which raises a BadMatch and would tear down the connection).
-    x_ = rx < 0 ? 0 : rx;
-    y_ = ry < 0 ? 0 : ry;
     int w = static_cast<int>(std::lround(region.w * scale));
     int h = static_cast<int>(std::lround(region.h * scale));
+    // Clip, don't shift: a region hanging off the top/left keeps only its
+    // on-screen part instead of capturing a displaced rectangle.
+    if (rx < 0) w += rx;
+    if (ry < 0) h += ry;
+    x_ = rx < 0 ? 0 : rx;
+    y_ = ry < 0 ? 0 : ry;
     if (x_ + w > screenW) w = screenW - x_;
     if (y_ + h > screenH) h = screenH - y_;
     if (w <= 0 || h <= 0) { close(); return false; }
