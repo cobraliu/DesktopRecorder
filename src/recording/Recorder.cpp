@@ -75,6 +75,9 @@ void Recorder::runLoop(CaptureRegion region, OutputOptions options) {
         if (!encoder.writeFrame(rgb.data(), stride)) { writeFailed = true; break; }
     }
 
+    // Wake the audio thread out of a blocking readSamples() before joining it; when the
+    // device produces no data (permission denied, unplugged) the join would never return.
+    if (useAudio) audio.requestStop();
     if (audioThread.joinable()) audioThread.join();
     source.close();
     audio.close();

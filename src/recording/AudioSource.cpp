@@ -23,7 +23,14 @@ bool AudioSource::open() {
     const AVInputFormat* ifmt = nullptr;
     for (const char* name : backends) {
         ifmt = av_find_input_format(name);
-        if (ifmt && avformat_open_input(&fmt_, "default", ifmt, nullptr) == 0)
+        if (!ifmt) continue;
+        // Pre-allocate the context so the interrupt callback is installed before any
+        // potentially blocking I/O; requestStop() flips stopRequested_ to abort reads.
+        fmt_ = avformat_alloc_context();
+        if (!fmt_) return false;
+        fmt_->interrupt_callback.callback = &AudioSource::interruptCb;
+        fmt_->interrupt_callback.opaque = this;
+        if (avformat_open_input(&fmt_, "default", ifmt, nullptr) == 0)
             break;
         ifmt = nullptr;
         fmt_ = nullptr;   // on open failure, avformat_open_input has already freed and nulled it
@@ -89,6 +96,14 @@ bool AudioSource::readSamples(std::vector<int16_t>& interleaved, int& nbSamples)
         return true;
     }
     return false;
+}
+
+int AudioSource::interruptCb(void* opaque) {
+    return static_cast<AudioSource*>(opaque)->stopRequested_.load() ? 1 : 0;
+}
+
+void AudioSource::requestStop() {
+    stopRequested_.store(true);   // makes the next (or an in-flight) av_read_frame fail
 }
 
 void AudioSource::close() {
@@ -273,7 +288,15 @@ void AudioSource::captureLoop() {
     safeRelease(enumerator);
     if (comInit) CoUninitialize();
 
-    // Wake any reader blocked waiting for data so it can observe end-of-stream.
+    // Mark capture stopped before waking readers: when the loop exits on a device error
+    // (rather than via close()), running_ is still true and a reader parked in
+    // readSamples() would otherwise wait forever with an empty queue.
+    running_.store(false);
+    cv_.notify_all();
+}
+
+void AudioSource::requestStop() {
+    running_.store(false);
     cv_.notify_all();
 }
 
@@ -379,6 +402,11 @@ bool AudioSource::readSamples(std::vector<int16_t>& interleaved, int& nbSamples)
 
     nbSamples = channels_ > 0 ? static_cast<int>(interleaved.size()) / channels_ : 0;
     return nbSamples > 0;
+}
+
+void AudioSource::requestStop() {
+    running_.store(false);
+    cv_.notify_all();
 }
 
 void AudioSource::close() {

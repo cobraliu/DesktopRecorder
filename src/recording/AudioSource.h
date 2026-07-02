@@ -2,14 +2,14 @@
 #include <vector>
 #include <cstdint>
 
-#if defined(_WIN32)
 #include <atomic>
+
+#if defined(_WIN32)
 #include <condition_variable>
 #include <deque>
 #include <mutex>
 #include <thread>
 #elif defined(__APPLE__)
-#include <atomic>
 #include <condition_variable>
 #include <deque>
 #include <mutex>
@@ -39,6 +39,12 @@ public:
     bool readSamples(std::vector<int16_t>& interleaved, int& nbSamples);
     int sampleRate() const { return sampleRate_; }
     int channels() const { return channels_; }
+    // Wake a reader blocked inside readSamples() and make it return false. Safe to call
+    // from another thread while a read is in progress; releases no resources (close() does).
+    // Without this, stopping a recording deadlocks when the device produces no data
+    // (input permission denied, device unplugged): readSamples() waits forever and the
+    // recorder's join() never returns.
+    void requestStop();
     void close();
 
 #if defined(__APPLE__)
@@ -73,12 +79,16 @@ private:
     std::condition_variable cv_;
     std::deque<int16_t> samples_;  // interleaved S16, guarded by mutex_
 #else
+    // av_read_frame() can block indefinitely if the capture device stalls; the format
+    // context's interrupt callback polls stopRequested_ so requestStop() can abort it.
+    static int interruptCb(void* opaque);
     AVFormatContext* fmt_ = nullptr;
     AVCodecContext*  dec_ = nullptr;
     AVFrame*         frame_ = nullptr;
     AVPacket*        pkt_ = nullptr;
     SwrContext*      swr_ = nullptr;
     int streamIdx_ = -1;
+    std::atomic<bool> stopRequested_{false};
 #endif
 };
 
