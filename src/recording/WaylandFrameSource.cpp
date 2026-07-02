@@ -76,6 +76,12 @@ void onProcessTrampoline(void* data) {
     static_cast<WaylandFrameSource*>(data)->onProcess();
 }
 
+void onStateChanged(void* data, enum pw_stream_state oldState,
+                    enum pw_stream_state newState, const char* /*error*/) {
+    static_cast<WaylandFrameSource*>(data)->onStreamStateChanged(
+        static_cast<int>(oldState), static_cast<int>(newState));
+}
+
 const pw_stream_events* streamEventsTable() {
     static pw_stream_events ev = [] {
         pw_stream_events e;
@@ -83,6 +89,7 @@ const pw_stream_events* streamEventsTable() {
         e.version = PW_VERSION_STREAM_EVENTS;
         e.param_changed = onParamChanged;
         e.process = onProcessTrampoline;
+        e.state_changed = onStateChanged;
         return e;
     }();
     return &ev;
@@ -364,6 +371,19 @@ void WaylandFrameSource::onFormatChanged(int w, int h, int spaFormat) {
     spaFormat_ = spaFormat;
 }
 
+void WaylandFrameSource::onStreamStateChanged(int oldState, int newState) {
+    const auto olds = static_cast<pw_stream_state>(oldState);
+    const auto news = static_cast<pw_stream_state>(newState);
+    // ERROR, or dropping back to UNCONNECTED after having been connected, means
+    // the compositor ended the cast (the user clicked "stop sharing", the session
+    // was closed, ...). The initial UNCONNECTED -> CONNECTING transitions and the
+    // PAUSED <-> STREAMING flips are normal and must not trip this.
+    if (news == PW_STREAM_STATE_ERROR ||
+        (news == PW_STREAM_STATE_UNCONNECTED &&
+         (olds == PW_STREAM_STATE_PAUSED || olds == PW_STREAM_STATE_STREAMING)))
+        streamDead_.store(true);
+}
+
 void WaylandFrameSource::onProcess() {
     auto* stream = static_cast<pw_stream*>(stream_);
     if (!stream) return;
@@ -425,6 +445,7 @@ void WaylandFrameSource::onProcess() {
 
 bool WaylandFrameSource::readFrame(std::vector<uint8_t>& rgb, int& stride) {
     if (width_ <= 0 || height_ <= 0) return false;
+    if (streamDead_.load()) return false;
 
     // Pace to the target frame rate (mirrors X11FrameSource) so the encoder's
     // 1/fps pts cadence matches wall-clock playback.

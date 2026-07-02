@@ -1,5 +1,6 @@
 #pragma once
 #include "recording/FrameSource.h"
+#include <atomic>
 #include <cstdint>
 #include <mutex>
 #include <vector>
@@ -31,6 +32,9 @@ public:
     void onProcess();
     // Called from the PipeWire param-changed callback when the format is set.
     void onFormatChanged(int w, int h, int spaFormat);
+    // Called from the PipeWire state-changed callback (values are pw_stream_state,
+    // passed as int to keep PipeWire types out of this header).
+    void onStreamStateChanged(int oldState, int newState);
 
 private:
     // Opaque PipeWire handles (real types live in the .cpp to keep PipeWire/SPA
@@ -58,6 +62,11 @@ private:
     std::mutex mutex_;
     std::vector<uint8_t> latest_;
     bool haveFrame_ = false;
+
+    // Set from the stream state callback when the compositor ends the cast
+    // (e.g. the user clicks "stop sharing"); readFrame then fails instead of
+    // silently recording the last frame forever.
+    std::atomic<bool> streamDead_{false};
 
     // Crop within the captured source and final (even) output dimensions.
     int cropX_ = 0, cropY_ = 0;
