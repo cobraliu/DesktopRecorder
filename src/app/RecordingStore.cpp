@@ -4,6 +4,7 @@
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonArray>
+#include <QSaveFile>
 
 namespace rr {
 
@@ -20,7 +21,16 @@ void RecordingStore::load() {
     items_.clear();
     QFile f(path_);
     if (f.open(QIODevice::ReadOnly)) {
-        const QJsonArray arr = QJsonDocument::fromJson(f.readAll()).array();
+        const QByteArray raw = f.readAll();
+        QJsonParseError parseErr;
+        const QJsonDocument doc = QJsonDocument::fromJson(raw, &parseErr);
+        if (parseErr.error != QJsonParseError::NoError && !raw.trimmed().isEmpty()) {
+            // Keep the damaged file around for inspection; the next save()
+            // would otherwise silently overwrite whatever is left in it.
+            QFile::remove(path_ + QStringLiteral(".corrupt"));
+            QFile::copy(path_, path_ + QStringLiteral(".corrupt"));
+        }
+        const QJsonArray arr = doc.array();
         for (const auto& v : arr) {
             RecordingItem it = fromJson(v.toObject());
             // Entries not finalized properly last time (still recording/finalizing) are treated as "finalization interrupted"
@@ -37,9 +47,12 @@ void RecordingStore::save() const {
     QJsonArray arr;
     for (const auto& it : items_) arr.append(toJson(it));
     QDir().mkpath(QFileInfo(path_).absolutePath());
-    QFile f(path_);
-    if (f.open(QIODevice::WriteOnly | QIODevice::Truncate))
+    // Atomic write: a crash mid-save must not truncate the existing index.
+    QSaveFile f(path_);
+    if (f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
         f.write(QJsonDocument(arr).toJson(QJsonDocument::Indented));
+        f.commit();
+    }
 }
 
 void RecordingStore::add(const RecordingItem& item) {
