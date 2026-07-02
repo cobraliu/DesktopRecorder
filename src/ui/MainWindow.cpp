@@ -351,6 +351,12 @@ void MainWindow::onModeClicked(int id) {
         } else {
             // Cancelled: revert to the previous mode button (idClicked is not re-emitted by setChecked)
             if (auto* b = modeGroup_->button(mode_)) b->setChecked(true);
+            // A silent revert is fine for Esc, but explain when there is no
+            // picker at all (e.g. Wayland sessions).
+            if (!picker)
+                QMessageBox::information(this, QStringLiteral("Window pick unavailable"),
+                    QStringLiteral("Picking a window is not supported on this session. "
+                                   "Use region select to frame the window instead."));
         }
     }
 }
