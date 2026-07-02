@@ -1,17 +1,25 @@
 #pragma once
 #include "recording/FrameSource.h"
+
+#include <atomic>
 #include <cstdint>
+#include <mutex>
+#include <vector>
 
 namespace rr {
 
-// Screen capture on macOS via Quartz Display Services (CGDisplayCreateImageForRect),
-// rendered into a tightly-packed RGBA bitmap context and converted to RGB24. This
-// synchronous, region-native approach mirrors X11FrameSource (XShm) and
-// WindowsFrameSource (GDI) and fits the FrameSource pull model directly. (The static
-// FFmpeg build has no avfoundation indev, so we grab pixels ourselves.) ScreenCaptureKit
-// (macOS 12.3+) is the modern asynchronous alternative and a possible later perf upgrade.
-// Requires the Screen Recording TCC permission at runtime; without it the captured image
-// is null and readFrame returns false.
+// Screen capture on macOS via ScreenCaptureKit (macOS 12.3+). SCStream pushes BGRA
+// frames on its own dispatch queue; the newest frame is kept under a mutex and
+// readFrame() — the Recorder's pull loop — copies it out paced to the target fps,
+// the same push-to-pull bridge WaylandFrameSource uses for PipeWire.
+//
+// The stream's content filter excludes this application's own windows, so the
+// floating Stop HUD, the red capture frame, and the countdown never appear in the
+// recording (the macOS counterpart of Windows' WDA_EXCLUDEFROMCAPTURE).
+//
+// Requires the Screen Recording TCC permission; without it open() fails. The
+// ObjC handles are stored as opaque pointers so this header stays plain C++ for
+// the cross-platform factory.
 class MacFrameSource : public FrameSource {
 public:
     ~MacFrameSource() override;
@@ -21,11 +29,23 @@ public:
     int width() const override { return width_; }
     int height() const override { return height_; }
 
+    // Called from the SCK sample-handler queue / delegate; not part of the
+    // FrameSource interface.
+    void storeFrame(const uint8_t* bgra, int bufW, int bufH, int bytesPerRow);
+    void markStreamDead() { streamDead_.store(true); }
+
 private:
-    unsigned int displayID_ = 0;  // CGDirectDisplayID (uint32_t)
-    int x_ = 0, y_ = 0;           // capture origin in the display's local point space
+    void* stream_ = nullptr;   // SCStream*        (CFBridgingRetain'ed)
+    void* handler_ = nullptr;  // RRStreamHandler* (stream output + delegate)
+    void* queue_ = nullptr;    // dispatch_queue_t (serial sample-handler queue)
+
     int width_ = 0, height_ = 0;
     int fps_ = 0;
+
+    std::mutex mutex_;
+    std::vector<uint8_t> latest_;  // RGB24 top-down, stride = width_ * 3
+    bool haveFrame_ = false;
+    std::atomic<bool> streamDead_{false};
 
     // Frame pacing so the encoder (pts at 1/fps) sees real-time playback.
     long long startNs_ = 0;

@@ -92,9 +92,17 @@ elseif(WIN32)
     # captures via WASAPI (COM), which needs ole32 for CoCreateInstance/CoTaskMemFree.
     target_link_libraries(rr_core PUBLIC gdi32 user32 ole32)
 elseif(APPLE)
-    # MacFrameSource captures via Quartz (CoreGraphics); AudioSource via a CoreAudio
-    # AudioQueue (AudioToolbox). CoreFoundation backs the CF types both use.
-    target_link_libraries(rr_core PUBLIC "-framework CoreGraphics" "-framework CoreFoundation" "-framework AudioToolbox")
+    # MacFrameSource captures via ScreenCaptureKit (macOS 12.3+): SCStream delivers
+    # CoreMedia sample buffers backed by CoreVideo pixel buffers. AudioSource uses a
+    # CoreAudio AudioQueue (AudioToolbox). CoreFoundation backs the CF types both use;
+    # CoreGraphics provides the geometry types.
+    target_link_libraries(rr_core PUBLIC
+        "-framework ScreenCaptureKit" "-framework CoreMedia" "-framework CoreVideo"
+        "-framework Foundation" "-framework CoreGraphics" "-framework CoreFoundation"
+        "-framework AudioToolbox")
+    # The SCK backend holds ObjC objects across calls; ARC keeps that manageable.
+    set_source_files_properties(src/recording/MacFrameSource.mm PROPERTIES
+        COMPILE_OPTIONS "-fobjc-arc")
 endif()
 
 # On Windows, WIN32 makes it a GUI app (no console window) and the .rc embeds the

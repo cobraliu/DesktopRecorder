@@ -27,7 +27,7 @@ std::unique_ptr<FrameSource> createFrameSource() {
 #elif defined(Q_OS_WIN)
     return std::make_unique<WindowsFrameSource>();
 #elif defined(Q_OS_MAC)
-    // Quartz CGDisplay capture (main display). Requires Screen Recording permission.
+    // ScreenCaptureKit capture (macOS 12.3+). Requires Screen Recording permission.
     return std::make_unique<MacFrameSource>();
 #else
     return nullptr;

@@ -10,7 +10,7 @@
   <key>CFBundleExecutable</key><string>RegionRecord</string>
   <key>CFBundleIconFile</key><string>RegionRecord</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>LSMinimumSystemVersion</key><string>11.0</string>
+  <key>LSMinimumSystemVersion</key><string>12.3</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSMicrophoneUsageDescription</key><string>RegionRecord captures the system's default audio input when you enable audio recording.</string>
 </dict>
