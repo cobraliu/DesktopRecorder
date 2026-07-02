@@ -379,19 +379,28 @@ void WaylandFrameSource::onProcess() {
         if (stride <= 0) stride = (fmtW_ > 0 ? fmtW_ : width_) * 4;
         const bool bgr =
             (spaFormat_ == SPA_VIDEO_FORMAT_BGRA || spaFormat_ == SPA_VIDEO_FORMAT_BGRx);
+        // The portal reports the source geometry (srcW_/srcH_, and hence the crop
+        // rect) in logical coordinates, while the PipeWire buffer is physical
+        // pixels; on HiDPI outputs fmtW_/fmtH_ exceed srcW_/srcH_. Map the crop
+        // into the buffer with a nearest-pixel sample (output stays logical-sized
+        // so the encoder dimensions fixed at open() remain valid).
+        const double scaleX =
+            (srcW_ > 0 && fmtW_ > 0) ? static_cast<double>(fmtW_) / srcW_ : 1.0;
+        const double scaleY =
+            (srcH_ > 0 && fmtH_ > 0) ? static_cast<double>(fmtH_) / srcH_ : 1.0;
         const int srcMaxW = fmtW_ > 0 ? fmtW_ : (cropX_ + width_);
         const int srcMaxH = fmtH_ > 0 ? fmtH_ : (cropY_ + height_);
 
         for (int row = 0; row < height_; ++row) {
             uint8_t* dst = latest_.data() + static_cast<size_t>(row) * width_ * 3;
-            const int sy = cropY_ + row;
+            const int sy = static_cast<int>((cropY_ + row) * scaleY);
             if (sy >= srcMaxH) {  // beyond the captured frame: leave black
                 std::memset(dst, 0, static_cast<size_t>(width_) * 3);
                 continue;
             }
             const uint8_t* srcRow = base + static_cast<size_t>(sy) * stride;
             for (int col = 0; col < width_; ++col) {
-                const int sx = cropX_ + col;
+                const int sx = static_cast<int>((cropX_ + col) * scaleX);
                 if (sx >= srcMaxW) {
                     dst[0] = dst[1] = dst[2] = 0;
                 } else {
