@@ -218,7 +218,9 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 }
 
 MainWindow::~MainWindow() {
-    delete captureFrame_;   // top-level window, not part of the QObject parent tree, so release it manually
+    // Top-level windows, not part of the QObject parent tree, so release them manually
+    delete captureFrame_;
+    delete stopHud_;
 }
 
 CaptureRegion MainWindow::defaultRegion() const {
