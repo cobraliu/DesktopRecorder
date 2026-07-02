@@ -43,6 +43,7 @@ private:
 
     int delaySeconds() const;
     bool hasFinalizing() const;
+    void setControlsEnabled(bool on);  // lock mode/fps/audio/record controls while counting down or recording
     void showEditingFrame();      // enter the editable floating frame at frameRegion_
     CaptureRegion defaultRegion() const;
     void buildStopHud();

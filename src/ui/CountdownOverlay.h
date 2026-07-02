@@ -1,12 +1,16 @@
 #pragma once
 #include <QWidget>
 class QTimer;
+class QScreen;
 namespace rr {
 class CountdownOverlay : public QWidget {
     Q_OBJECT
 public:
     explicit CountdownOverlay(QWidget* parent = nullptr);
-    void start(int seconds);
+    // screen: where to show the overlay (the screen being recorded); primary if null.
+    void start(int seconds, QScreen* screen = nullptr);
+    void cancel();                 // abort a running countdown without emitting countdownFinished
+    bool isCounting() const;
     // Whether the global stop hotkey actually registered; decides the hint text.
     void setHotkeyAvailable(bool available);
 signals:

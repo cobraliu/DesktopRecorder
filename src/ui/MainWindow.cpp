@@ -285,7 +285,11 @@ void MainWindow::showStopHud(const CaptureRegion& region, bool fullscreen) {
 
     stopHud_->adjustSize();
     const QSize sz = stopHud_->size();
-    QScreen* screen = QGuiApplication::primaryScreen();
+    // Clamp within the screen actually containing the recorded region, so the
+    // HUD does not jump to the primary monitor on multi-screen setups.
+    QScreen* screen = QGuiApplication::screenAt(
+        QPoint(region.x + region.w / 2, region.y + region.h / 2));
+    if (!screen) screen = QGuiApplication::primaryScreen();
     const QRect sg = screen ? screen->availableGeometry() : QRect(0, 0, 1920, 1080);
     const int margin = 16;
     int x, y;
@@ -325,6 +329,9 @@ int MainWindow::delaySeconds() const {
 
 void MainWindow::onModeClicked(int id) {
     const Mode m = static_cast<Mode>(id);
+    // Re-clicking the current mode changes nothing (and must not reset the
+    // region frame to the stale saved one); Window re-picks on purpose.
+    if (m == mode_ && m != Window) return;
     // When leaving "region select", remember the current frame so it can be restored on switching back
     if (mode_ == Region && m != Region)
         savedRegionSelect_ = captureFrame_->captureRegion();
@@ -362,12 +369,13 @@ void MainWindow::onModeClicked(int id) {
 }
 
 void MainWindow::onStartClicked() {
-    if (controller_->isRecording()) return;
+    if (controller_->isRecording() || countdown_->isCounting()) return;
     pendingFps_ = fpsBox_->value();
     pendingAudio_ = audioBox_->isChecked();
 
+    QScreen* screen = nullptr;
     if (mode_ == Fullscreen) {
-        QScreen* screen = QGuiApplication::primaryScreen();
+        screen = QGuiApplication::primaryScreen();
         const QRect g = screen ? screen->geometry() : QRect(0, 0, 1920, 1080);
         pendingRegion_ = fullscreenRegion(g.x(), g.y(), g.width(), g.height());
         pendingRegion_.dpiScale = screen ? screen->devicePixelRatio() : 1.0;
@@ -376,7 +384,7 @@ void MainWindow::onStartClicked() {
         frameRegion_ = captureFrame_->captureRegion();
         // Qt geometry is logical; the X11/Windows frame sources need the ratio
         // to reach physical screen pixels on HiDPI displays.
-        QScreen* screen = captureFrame_->screen();
+        screen = captureFrame_->screen();
         if (!screen) screen = QGuiApplication::primaryScreen();
         frameRegion_.dpiScale = screen ? screen->devicePixelRatio() : 1.0;
         pendingRegion_ = frameRegion_;
@@ -385,9 +393,10 @@ void MainWindow::onStartClicked() {
         excludeFromScreenCapture(captureFrame_);
     }
 
+    setControlsEnabled(false);
     hide();                       // hide the main window so it isn't captured
     QGuiApplication::processEvents();
-    countdown_->start(delaySeconds());
+    countdown_->start(delaySeconds(), screen);   // show the countdown on the recorded screen
 }
 
 void MainWindow::beginCapture() {
@@ -406,12 +415,22 @@ void MainWindow::beginCapture() {
 }
 
 void MainWindow::onStopRequested() {
+    // Stop during the countdown aborts the pending recording and restores the UI.
+    if (countdown_->isCounting()) {
+        countdown_->cancel();
+        setControlsEnabled(true);
+        showNormal(); raise();
+        if (mode_ == Fullscreen) captureFrame_->hide();
+        else showEditingFrame();
+        return;
+    }
     hideStopHud();
     if (controller_->isRecording()) controller_->stopRecording();
 }
 
 void MainWindow::onCompleted(const QString&, const QString& path) {
     hideStopHud();
+    setControlsEnabled(true);
     tray_->showMessage(QStringLiteral("RegionRecord"),
                        QFileInfo(path).fileName() + QStringLiteral(" finalized"),
                        QSystemTrayIcon::Information, 4000);
@@ -428,7 +447,8 @@ void MainWindow::onFailed(const QString&, const QString& msg) {
     // and the stop HUD / red frame are up; without this cleanup they stay stranded on
     // screen with the UI stuck in a "recording" look.
     hideStopHud();
-    countdown_->hide();
+    countdown_->cancel();
+    setControlsEnabled(true);
     if (mode_ == Fullscreen) captureFrame_->hide();
     else showEditingFrame();
     showNormal(); raise();
@@ -441,7 +461,27 @@ bool MainWindow::hasFinalizing() const {
     return false;
 }
 
+void MainWindow::setControlsEnabled(bool on) {
+    recordBtn_->setEnabled(on);
+    delayBox_->setEnabled(on);
+    fpsBox_->setEnabled(on);
+    audioBox_->setEnabled(on);
+    for (auto* b : modeGroup_->buttons()) b->setEnabled(on);
+}
+
 void MainWindow::closeEvent(QCloseEvent* e) {
+    if (controller_->isRecording()) {
+        const auto r = QMessageBox::question(this,
+            QStringLiteral("Recording in progress"),
+            QStringLiteral("A recording is running. Stop it and quit?"),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+        if (r != QMessageBox::Yes) { e->ignore(); return; }
+        hideStopHud();
+        controller_->stopRecording();
+        quitAfterFinalize_ = true;   // onCompleted closes once the file is finalized
+        e->ignore();
+        return;
+    }
     if (quitAfterFinalize_ || !hasFinalizing()) {
         if (captureFrame_) captureFrame_->hide();
         e->accept();

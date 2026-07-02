@@ -19,11 +19,22 @@ void CountdownOverlay::setHotkeyAvailable(bool available) {
     hotkeyAvailable_ = available;
 }
 
-void CountdownOverlay::start(int seconds) {
+void CountdownOverlay::cancel() {
+    timer_->stop();
+    remaining_ = 0;
+    hide();
+}
+
+bool CountdownOverlay::isCounting() const {
+    return timer_->isActive();
+}
+
+void CountdownOverlay::start(int seconds, QScreen* screen) {
     if (seconds <= 0) { emit countdownFinished(); return; }
     remaining_ = seconds;
-    if (QScreen* s = QGuiApplication::primaryScreen())
-        setGeometry(s->geometry());
+    if (!screen) screen = QGuiApplication::primaryScreen();
+    if (screen)
+        setGeometry(screen->geometry());
 #if defined(Q_OS_MACOS)
     // showFullScreen() on macOS enters a native fullscreen Space and renders this translucent
     // Tool window as an opaque black surface (which can also linger into the recording). Show it
