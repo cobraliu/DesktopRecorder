@@ -226,7 +226,6 @@ endif()
 # ---- GUI widget library rr_ui (depends on Widgets) ----
 add_library(rr_ui STATIC
     src/ui/CountdownOverlay.cpp
-    src/ui/RegionSelectorOverlay.cpp
     src/ui/frame_geometry.cpp
     src/ui/CaptureFrameWindow.cpp
     src/ui/CaptureExclusion.cpp
