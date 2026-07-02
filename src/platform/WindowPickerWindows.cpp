@@ -1,6 +1,7 @@
 #include "platform/WindowPickerWindows.h"
 
 #include <windows.h>
+#include <dwmapi.h>
 
 #include <QGuiApplication>
 #include <QScreen>
@@ -24,7 +25,16 @@ bool WindowPickerWindows::pickBlocking(CaptureRegion& out) {
             HWND hw = WindowFromPoint(pt);
             if (hw) hw = GetAncestor(hw, GA_ROOT);  // resolve to the top-level window
             RECT r;
-            if (hw && GetWindowRect(hw, &r)) {
+            bool haveRect = false;
+            if (hw) {
+                // GetWindowRect includes the invisible DWM resize borders on
+                // Win10+, so the capture would show slivers of whatever is
+                // behind the window. Prefer the visible extended frame bounds.
+                haveRect = SUCCEEDED(DwmGetWindowAttribute(
+                    hw, DWMWA_EXTENDED_FRAME_BOUNDS, &r, sizeof(r)));
+                if (!haveRect) haveRect = GetWindowRect(hw, &r) != 0;
+            }
+            if (haveRect) {
                 const int vx = GetSystemMetrics(SM_XVIRTUALSCREEN);
                 const int vy = GetSystemMetrics(SM_YVIRTUALSCREEN);
                 const int vw = GetSystemMetrics(SM_CXVIRTUALSCREEN);

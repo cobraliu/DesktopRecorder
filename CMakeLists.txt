@@ -188,8 +188,9 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_include_directories(rr_app PUBLIC ${X11_INCLUDE_DIR})
 elseif(WIN32)
     # GlobalHotkeyWindows (RegisterHotKey/GetMessage) and WindowPickerWindows
-    # (WindowFromPoint/GetWindowRect/cursor) both use the Win32 user32 API.
-    target_link_libraries(rr_app PUBLIC user32)
+    # (WindowFromPoint/cursor) both use the Win32 user32 API; the picker also
+    # queries DWMWA_EXTENDED_FRAME_BOUNDS from dwmapi.
+    target_link_libraries(rr_app PUBLIC user32 dwmapi)
 elseif(APPLE)
     # GlobalHotkeyMac uses Carbon (RegisterEventHotKey); WindowPickerMac uses CoreGraphics
     # (CGWindowList/CGEvent). CoreFoundation backs the CF types.
