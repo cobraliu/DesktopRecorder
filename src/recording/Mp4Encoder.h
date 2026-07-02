@@ -42,7 +42,11 @@ private:
     SwsContext*      sws_ = nullptr;
     int   width_ = 0;
     int   height_ = 0;
-    int64_t pts_ = 0;
+    int   fps_ = 0;
+    // Video pts comes from the wall clock (see writeFrame), not a frame counter:
+    // videoStartNs_ anchors t=0 at the first frame, lastPts_ enforces monotonicity.
+    long long videoStartNs_ = -1;
+    int64_t lastPts_ = -1;
     bool  opened_ = false;
     bool  finished_ = false;
 

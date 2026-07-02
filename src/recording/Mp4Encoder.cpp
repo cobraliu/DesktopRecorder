@@ -1,5 +1,8 @@
 #include "recording/Mp4Encoder.h"
 
+#include <chrono>
+#include <cmath>
+
 extern "C" {
 #include <libavformat/avformat.h>
 #include <libavcodec/avcodec.h>
@@ -40,7 +43,7 @@ void Mp4Encoder::configureAudio(int sampleRate, int channels) {
 }
 
 bool Mp4Encoder::open(int width, int height, int fps, const std::string& path) {
-    width_ = width; height_ = height;
+    width_ = width; height_ = height; fps_ = fps;
 
     if (avformat_alloc_output_context2(&fmt_, nullptr, "mp4", path.c_str()) < 0 || !fmt_)
         return false;
@@ -169,7 +172,18 @@ bool Mp4Encoder::writeFrame(const uint8_t* rgb, int stride) {
     sws_scale(sws_, src, srcStride, 0, height_,
               frame_->data, frame_->linesize);
 
-    frame_->pts = pts_++;
+    // Stamp the frame with wall-clock elapsed time in 1/fps ticks rather than a frame
+    // counter: capture regularly runs slower than the target fps, and counter timestamps
+    // would compress the timeline and drift away from the sample-clocked audio track.
+    const long long nowNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+    if (videoStartNs_ < 0) videoStartNs_ = nowNs;
+    int64_t pts = static_cast<int64_t>(
+        llround(static_cast<double>(nowNs - videoStartNs_) * fps_ / 1e9));
+    if (pts <= lastPts_) pts = lastPts_ + 1;   // libx264 requires strictly increasing pts
+    lastPts_ = pts;
+
+    frame_->pts = pts;
     if (avcodec_send_frame(codec_, frame_) < 0) return false;
     return drainPackets();
 }
