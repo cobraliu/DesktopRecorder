@@ -239,6 +239,8 @@ void AudioSource::captureLoop() {
     }
 
     // Pull packets, convert to S16, and append to the queue until close() stops us.
+    UINT64 nextDevPos = 0;  // expected device position (frames) of the next packet
+    bool havePos = false;
     while (running_.load()) {
         UINT32 packetFrames = 0;
         if (FAILED(capture->GetNextPacketSize(&packetFrames))) break;
@@ -248,10 +250,25 @@ void AudioSource::captureLoop() {
             BYTE* data = nullptr;
             UINT32 numFrames = 0;
             DWORD flags = 0;
-            if (FAILED(capture->GetBuffer(&data, &numFrames, &flags, nullptr, nullptr))) {
+            UINT64 devPos = 0;
+            if (FAILED(capture->GetBuffer(&data, &numFrames, &flags, &devPos, nullptr))) {
                 packetFrames = 0;
                 break;
             }
+            // A glitch (DATA_DISCONTINUITY) drops frames; without compensation
+            // the audio track shortens and drifts against the video. Fill the
+            // device-position gap with silence, capped so a bogus jump cannot
+            // allocate unbounded memory.
+            std::vector<int16_t> silence;
+            if (havePos && (flags & AUDCLNT_BUFFERFLAGS_DATA_DISCONTINUITY) &&
+                devPos > nextDevPos) {
+                UINT64 missing = devPos - nextDevPos;
+                const UINT64 cap = static_cast<UINT64>(wf->nSamplesPerSec) * 2;
+                if (missing > cap) missing = cap;
+                silence.assign(static_cast<size_t>(missing) * channels, 0);
+            }
+            havePos = true;
+            nextDevPos = devPos + numFrames;
             const size_t count = static_cast<size_t>(numFrames) * channels;
             std::vector<int16_t> chunk(count);
             const bool silent = (flags & AUDCLNT_BUFFERFLAGS_SILENT) != 0;
@@ -272,6 +289,8 @@ void AudioSource::captureLoop() {
 
             {
                 std::lock_guard<std::mutex> lock(mutex_);
+                if (!silence.empty())
+                    queue_.insert(queue_.end(), silence.begin(), silence.end());
                 queue_.insert(queue_.end(), chunk.begin(), chunk.end());
             }
             cv_.notify_all();
