@@ -206,6 +206,8 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     connect(countdown_, &CountdownOverlay::countdownFinished, this, &MainWindow::beginCapture);
     connect(controller_.get(), &RecordingController::recordingCompleted,
             this, &MainWindow::onCompleted);
+    connect(controller_.get(), &RecordingController::recordingFailed,
+            this, &MainWindow::onFailed);
     connect(store_.get(), &RecordingStore::changed, this, &MainWindow::refreshList);
 
     store_->load();
@@ -405,6 +407,19 @@ void MainWindow::onCompleted(const QString&, const QString& path) {
     // Restore the floating frame: region select / window pick return to editing state, fullscreen hides it
     if (mode_ == Fullscreen) captureFrame_->hide();
     else showEditingFrame();
+}
+
+void MainWindow::onFailed(const QString&, const QString& msg) {
+    // The recorder can fail at any point after Start (capture source rejected, output
+    // file not writable, write error mid-recording). By then the main window is hidden
+    // and the stop HUD / red frame are up; without this cleanup they stay stranded on
+    // screen with the UI stuck in a "recording" look.
+    hideStopHud();
+    countdown_->hide();
+    if (mode_ == Fullscreen) captureFrame_->hide();
+    else showEditingFrame();
+    showNormal(); raise();
+    QMessageBox::warning(this, QStringLiteral("Recording failed"), msg);
 }
 
 bool MainWindow::hasFinalizing() const {

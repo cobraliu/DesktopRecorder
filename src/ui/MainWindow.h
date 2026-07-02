@@ -36,6 +36,7 @@ private slots:
     void beginCapture();          // actually start recording after the countdown ends
     void onStopRequested();
     void onCompleted(const QString& id, const QString& path);
+    void onFailed(const QString& id, const QString& msg);
 
 private:
     enum Mode { Fullscreen = 0, Region = 1, Window = 2 };
