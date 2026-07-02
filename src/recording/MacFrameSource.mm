@@ -90,12 +90,13 @@ bool MacFrameSource::readFrame(std::vector<uint8_t>& rgb, int& stride) {
     CGContextRelease(ctx);
     CGImageRelease(img);
 
-    // CGBitmapContext has a bottom-left origin, so row 0 is the bottom scanline; flip
-    // vertically while converting RGBA -> RGB24 to produce top-down rows for the encoder.
+    // The bitmap context's backing buffer stores row 0 as the top scanline (the bottom-left
+    // Quartz origin affects drawing coordinates only, not memory layout), so the buffer is
+    // already top-down; convert RGBA -> RGB24 row by row without flipping.
     stride = width_ * 3;
     rgb.resize(static_cast<size_t>(stride) * height_);
     for (int row = 0; row < height_; ++row) {
-        const uint8_t* s = rgba.data() + static_cast<size_t>(height_ - 1 - row) * width_ * 4;
+        const uint8_t* s = rgba.data() + static_cast<size_t>(row) * width_ * 4;
         uint8_t* d = rgb.data() + static_cast<size_t>(row) * stride;
         for (int col = 0; col < width_; ++col) {
             d[0] = s[0];  // R
