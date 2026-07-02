@@ -27,7 +27,10 @@ bool WindowPickerX11::pickBlocking(CaptureRegion& out) {
         XCloseDisplay(d);
         return false;
     }
-    XGrabKeyboard(d, root, False, GrabModeAsync, GrabModeAsync, CurrentTime); // capture Esc
+    // Capture Esc for cancel. On failure the pick still works by click; only
+    // the Esc shortcut is unavailable (another client holds the keyboard).
+    const bool kbGrabbed =
+        XGrabKeyboard(d, root, False, GrabModeAsync, GrabModeAsync, CurrentTime) == GrabSuccess;
 
     bool ok = false;
     XEvent ev;
@@ -46,10 +49,14 @@ bool WindowPickerX11::pickBlocking(CaptureRegion& out) {
                 XTranslateCoordinates(d, target, root, 0, 0, &ax, &ay, &child);
                 const int sw = DisplayWidth(d, DefaultScreen(d));
                 const int sh = DisplayHeight(d, DefaultScreen(d));
-                int x = ax < 0 ? 0 : ax;
-                int y = ay < 0 ? 0 : ay;
                 int w = static_cast<int>(gw);
                 int h = static_cast<int>(gh);
+                // Clip, don't shift: keep only the on-screen part of a window
+                // hanging off the top/left edge.
+                if (ax < 0) w += ax;
+                if (ay < 0) h += ay;
+                int x = ax < 0 ? 0 : ax;
+                int y = ay < 0 ? 0 : ay;
                 if (x + w > sw) w = sw - x;
                 if (y + h > sh) h = sh - y;
                 // XGetGeometry reports physical pixels while the caller (the
@@ -67,7 +74,7 @@ bool WindowPickerX11::pickBlocking(CaptureRegion& out) {
         }
     }
 
-    XUngrabKeyboard(d, CurrentTime);
+    if (kbGrabbed) XUngrabKeyboard(d, CurrentTime);
     XUngrabPointer(d, CurrentTime);
     XFreeCursor(d, cur);
     XSync(d, False);
