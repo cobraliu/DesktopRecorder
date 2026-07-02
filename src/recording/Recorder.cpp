@@ -32,12 +32,31 @@ void Recorder::start(const CaptureRegion& region, const OutputOptions& options) 
 
 void Recorder::stop() {
     stopFlag_.store(true);
+    // Interrupt a source blocked in open() (the Wayland portal consent dialog
+    // can hold the recording thread for up to 60 s).
+    std::lock_guard<std::mutex> lk(sourceMutex_);
+    if (activeSource_) activeSource_->requestStop();
 }
 
 void Recorder::runLoop(CaptureRegion region, OutputOptions options) {
     auto sourcePtr = createFrameSource();
-    if (!sourcePtr || !sourcePtr->open(region, options.fps)) {
+    if (!sourcePtr) {
         emit error(QStringLiteral("Failed to open screen capture source"));
+        return;
+    }
+    {
+        std::lock_guard<std::mutex> lk(sourceMutex_);
+        activeSource_ = sourcePtr.get();
+    }
+    if (stopFlag_.load()) sourcePtr->requestStop();  // stop raced ahead of us
+    if (!sourcePtr->open(region, options.fps)) {
+        {
+            std::lock_guard<std::mutex> lk(sourceMutex_);
+            activeSource_ = nullptr;
+        }
+        emit error(stopFlag_.load()
+                       ? QStringLiteral("Recording stopped before capture started")
+                       : QStringLiteral("Failed to open screen capture source"));
         return;
     }
     FrameSource& source = *sourcePtr;
@@ -79,6 +98,10 @@ void Recorder::runLoop(CaptureRegion region, OutputOptions options) {
     // device produces no data (permission denied, unplugged) the join would never return.
     if (useAudio) audio.requestStop();
     if (audioThread.joinable()) audioThread.join();
+    {
+        std::lock_guard<std::mutex> lk(sourceMutex_);
+        activeSource_ = nullptr;
+    }
     source.close();
     audio.close();
 

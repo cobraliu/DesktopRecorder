@@ -130,6 +130,7 @@ bool WaylandFrameSource::open(const CaptureRegion& region, int fps) {
     // the Response fires before we connect. Returns false on error/timeout/nonzero.
     auto portalCall = [&](const QString& method, QVariantList args,
                           QVariantMap optionsTemplate, QVariantMap& outResults) -> bool {
+        if (stopRequested_.load()) return false;
         const QString token =
             QStringLiteral("rr%1").arg(tokenCounter.fetch_add(1));
         const QString reqPath =
@@ -152,8 +153,15 @@ bool WaylandFrameSource::open(const CaptureRegion& region, int fps) {
         if (reply.type() == QDBusMessage::ErrorMessage) return false;
 
         QTimer::singleShot(60000, &handler.loop, &QEventLoop::quit);
+        // Poll for a stop request (from Recorder::stop on the GUI thread) so the
+        // user is not stuck waiting on an unanswered consent dialog.
+        QTimer poll;
+        QObject::connect(&poll, &QTimer::timeout, &handler.loop, [this, &handler] {
+            if (stopRequested_.load()) handler.loop.quit();
+        });
+        poll.start(100);
         handler.loop.exec();
-        if (handler.code != 0) return false;
+        if (stopRequested_.load() || handler.code != 0) return false;
         outResults = handler.results;
         return true;
     };
@@ -370,6 +378,8 @@ void WaylandFrameSource::onFormatChanged(int w, int h, int spaFormat) {
     fmtH_ = h;
     spaFormat_ = spaFormat;
 }
+
+void WaylandFrameSource::requestStop() { stopRequested_.store(true); }
 
 void WaylandFrameSource::onStreamStateChanged(int oldState, int newState) {
     const auto olds = static_cast<pw_stream_state>(oldState);

@@ -3,11 +3,14 @@
 #include <QString>
 #include <atomic>
 #include <memory>
+#include <mutex>
 #include "recording/types.h"
 
 class QThread;
 
 namespace rr {
+
+class FrameSource;
 
 class Recorder : public QObject {
     Q_OBJECT
@@ -27,6 +30,11 @@ private:
 
     QThread* thread_ = nullptr;
     std::atomic<bool> stopFlag_{false};
+
+    // The frame source currently owned by runLoop, so stop() can interrupt a
+    // blocking open() (the Wayland portal handshake). Guarded by sourceMutex_.
+    FrameSource* activeSource_ = nullptr;
+    std::mutex sourceMutex_;
 };
 
 }

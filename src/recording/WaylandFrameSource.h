@@ -24,6 +24,9 @@ public:
     bool open(const CaptureRegion& region, int fps) override;
     bool readFrame(std::vector<uint8_t>& rgb, int& stride) override;
     void close() override;
+    // Aborts a portal handshake blocked in open() (the consent dialog can sit
+    // unanswered for up to 60 s); called from the GUI thread via Recorder::stop.
+    void requestStop() override;
     int width() const override { return width_; }
     int height() const override { return height_; }
 
@@ -67,6 +70,9 @@ private:
     // (e.g. the user clicks "stop sharing"); readFrame then fails instead of
     // silently recording the last frame forever.
     std::atomic<bool> streamDead_{false};
+
+    // Set by requestStop(); polled by the portal-handshake wait loops in open().
+    std::atomic<bool> stopRequested_{false};
 
     // Crop within the captured source and final (even) output dimensions.
     int cropX_ = 0, cropY_ = 0;
