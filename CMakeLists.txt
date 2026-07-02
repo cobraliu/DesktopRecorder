@@ -180,7 +180,9 @@ add_library(rr_app STATIC
     ${PLATFORM_PICKER_SRC}
 )
 target_include_directories(rr_app PUBLIC src)
-target_link_libraries(rr_app PUBLIC Qt6::Core rr_core)
+# Qt6::Gui: the window pickers convert native physical-pixel geometry to Qt
+# logical coordinates via QScreen::devicePixelRatio().
+target_link_libraries(rr_app PUBLIC Qt6::Core Qt6::Gui rr_core)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_libraries(rr_app PUBLIC ${X11_LIBRARIES})
     target_include_directories(rr_app PUBLIC ${X11_INCLUDE_DIR})

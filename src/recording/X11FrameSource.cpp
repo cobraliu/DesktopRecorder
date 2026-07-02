@@ -7,6 +7,7 @@
 #include <sys/shm.h>
 
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <thread>
@@ -48,12 +49,17 @@ bool X11FrameSource::open(const CaptureRegion& region, int fps) {
     const int screenW = DisplayWidth(dpy, screen);
     const int screenH = DisplayHeight(dpy, screen);
 
+    // The region arrives in Qt logical coordinates; the X server addresses
+    // physical pixels, so map through the screen's device pixel ratio first.
+    const double scale = region.dpiScale > 0 ? region.dpiScale : 1.0;
+    const int rx = static_cast<int>(std::lround(region.x * scale));
+    const int ry = static_cast<int>(std::lround(region.y * scale));
     // Clamp the requested region to the screen so XShmGetImage cannot read out
     // of bounds (which raises a BadMatch and would tear down the connection).
-    x_ = region.x < 0 ? 0 : region.x;
-    y_ = region.y < 0 ? 0 : region.y;
-    int w = region.w;
-    int h = region.h;
+    x_ = rx < 0 ? 0 : rx;
+    y_ = ry < 0 ? 0 : ry;
+    int w = static_cast<int>(std::lround(region.w * scale));
+    int h = static_cast<int>(std::lround(region.h * scale));
     if (x_ + w > screenW) w = screenW - x_;
     if (y_ + h > screenH) h = screenH - y_;
     if (w <= 0 || h <= 0) { close(); return false; }

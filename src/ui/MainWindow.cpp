@@ -363,9 +363,15 @@ void MainWindow::onStartClicked() {
         QScreen* screen = QGuiApplication::primaryScreen();
         const QRect g = screen ? screen->geometry() : QRect(0, 0, 1920, 1080);
         pendingRegion_ = fullscreenRegion(g.x(), g.y(), g.width(), g.height());
+        pendingRegion_.dpiScale = screen ? screen->devicePixelRatio() : 1.0;
         captureFrame_->hide();
     } else {
         frameRegion_ = captureFrame_->captureRegion();
+        // Qt geometry is logical; the X11/Windows frame sources need the ratio
+        // to reach physical screen pixels on HiDPI displays.
+        QScreen* screen = captureFrame_->screen();
+        if (!screen) screen = QGuiApplication::primaryScreen();
+        frameRegion_.dpiScale = screen ? screen->devicePixelRatio() : 1.0;
         pendingRegion_ = frameRegion_;
         captureFrame_->enterRecordingStyle();   // keep the red frame visible to mark that this area is being recorded
         // Re-apply after the flag change above, which can recreate the native window (Windows).

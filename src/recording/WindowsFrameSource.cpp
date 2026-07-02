@@ -3,6 +3,7 @@
 #include <windows.h>
 
 #include <chrono>
+#include <cmath>
 #include <thread>
 
 namespace rr {
@@ -24,10 +25,15 @@ bool WindowsFrameSource::open(const CaptureRegion& region, int fps) {
     const int vw = GetSystemMetrics(SM_CXVIRTUALSCREEN);
     const int vh = GetSystemMetrics(SM_CYVIRTUALSCREEN);
 
-    x_ = region.x < vx ? vx : region.x;
-    y_ = region.y < vy ? vy : region.y;
-    int w = region.w;
-    int h = region.h;
+    // The region arrives in Qt logical coordinates; GDI addresses physical
+    // pixels, so map through the screen's device pixel ratio first.
+    const double scale = region.dpiScale > 0 ? region.dpiScale : 1.0;
+    const int rx = static_cast<int>(std::lround(region.x * scale));
+    const int ry = static_cast<int>(std::lround(region.y * scale));
+    x_ = rx < vx ? vx : rx;
+    y_ = ry < vy ? vy : ry;
+    int w = static_cast<int>(std::lround(region.w * scale));
+    int h = static_cast<int>(std::lround(region.h * scale));
     if (x_ + w > vx + vw) w = vx + vw - x_;
     if (y_ + h > vy + vh) h = vy + vh - y_;
     if (w <= 0 || h <= 0) return false;

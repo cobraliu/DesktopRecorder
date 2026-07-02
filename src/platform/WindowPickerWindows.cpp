@@ -2,6 +2,11 @@
 
 #include <windows.h>
 
+#include <QGuiApplication>
+#include <QScreen>
+
+#include <cmath>
+
 namespace rr {
 
 static int evenDown(int v) { return v - (v % 2); }
@@ -30,10 +35,16 @@ bool WindowPickerWindows::pickBlocking(CaptureRegion& out) {
                 int h = r.bottom - r.top;
                 if (x + w > vx + vw) w = vx + vw - x;
                 if (y + h > vy + vh) h = vy + vh - y;
-                out.x = x;
-                out.y = y;
-                out.w = evenDown(w);
-                out.h = evenDown(h);
+                // GetWindowRect reports physical pixels while the caller (the
+                // floating frame) works in Qt logical coordinates; scale down
+                // by the device pixel ratio. Approximate on mixed-DPI
+                // multi-monitor setups, exact for the uniform-scale case.
+                const QScreen* qs = QGuiApplication::primaryScreen();
+                const double dpr = qs ? qs->devicePixelRatio() : 1.0;
+                out.x = static_cast<int>(std::lround(x / dpr));
+                out.y = static_cast<int>(std::lround(y / dpr));
+                out.w = evenDown(static_cast<int>(std::lround(w / dpr)));
+                out.h = evenDown(static_cast<int>(std::lround(h / dpr)));
                 ok = (out.w >= 2 && out.h >= 2);
             }
             // Wait for release so the click does not keep registering.

@@ -1,8 +1,15 @@
 #include "platform/WindowPickerX11.h"
 
+// Qt headers must precede Xlib: X11 defines Status/Bool/None macros that
+// break the Qt headers if they are seen first.
+#include <QGuiApplication>
+#include <QScreen>
+
 #include <X11/Xlib.h>
 #include <X11/cursorfont.h>
 #include <X11/keysym.h>
+
+#include <cmath>
 
 namespace rr {
 
@@ -45,10 +52,15 @@ bool WindowPickerX11::pickBlocking(CaptureRegion& out) {
                 int h = static_cast<int>(gh);
                 if (x + w > sw) w = sw - x;
                 if (y + h > sh) h = sh - y;
-                out.x = x;
-                out.y = y;
-                out.w = evenDown(w);
-                out.h = evenDown(h);
+                // XGetGeometry reports physical pixels while the caller (the
+                // floating frame) works in Qt logical coordinates; scale down
+                // by the device pixel ratio (global on X11).
+                const QScreen* qs = QGuiApplication::primaryScreen();
+                const double dpr = qs ? qs->devicePixelRatio() : 1.0;
+                out.x = static_cast<int>(std::lround(x / dpr));
+                out.y = static_cast<int>(std::lround(y / dpr));
+                out.w = evenDown(static_cast<int>(std::lround(w / dpr)));
+                out.h = evenDown(static_cast<int>(std::lround(h / dpr)));
                 ok = (out.w >= 2 && out.h >= 2);
             }
             break;
