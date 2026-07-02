@@ -24,6 +24,7 @@ private:
     void* screenDC_ = nullptr;  // HDC for the whole virtual screen
     void* memDC_    = nullptr;  // HDC compatible memory DC
     void* bitmap_   = nullptr;  // HBITMAP DIB section selected into memDC_
+    void* oldBitmap_ = nullptr; // stock bitmap displaced by SelectObject, restored on close
     void* bits_     = nullptr;  // pointer to the DIB's BGRA pixels (top-down)
 
     int x_ = 0, y_ = 0;         // capture origin in virtual-screen coordinates

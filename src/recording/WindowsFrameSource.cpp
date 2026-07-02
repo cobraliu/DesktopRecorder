@@ -70,7 +70,9 @@ bool WindowsFrameSource::open(const CaptureRegion& region, int fps) {
         ReleaseDC(nullptr, screen);
         return false;
     }
-    SelectObject(mem, bmp);
+    // Keep the displaced stock bitmap: DeleteObject silently fails on a bitmap
+    // that is still selected into a DC, which would leak the DIB every recording.
+    oldBitmap_ = SelectObject(mem, bmp);
 
     screenDC_ = screen;
     memDC_ = mem;
@@ -119,6 +121,11 @@ bool WindowsFrameSource::readFrame(std::vector<uint8_t>& rgb, int& stride) {
 }
 
 void WindowsFrameSource::close() {
+    if (memDC_ && oldBitmap_) {
+        // Deselect our DIB first; see the note at SelectObject in open().
+        SelectObject(static_cast<HDC>(memDC_), static_cast<HGDIOBJ>(oldBitmap_));
+        oldBitmap_ = nullptr;
+    }
     if (bitmap_) {
         DeleteObject(static_cast<HBITMAP>(bitmap_));
         bitmap_ = nullptr;
