@@ -61,6 +61,16 @@ UInt32 qtKeyToVk(int key) {
         case Qt::Key_F10: return kVK_F10;
         case Qt::Key_F11: return kVK_F11;
         case Qt::Key_F12: return kVK_F12;
+        // F13-F20 round out parity with the other backends (X11 reaches F35,
+        // Windows F24); Carbon has no virtual key codes beyond F20.
+        case Qt::Key_F13: return kVK_F13;
+        case Qt::Key_F14: return kVK_F14;
+        case Qt::Key_F15: return kVK_F15;
+        case Qt::Key_F16: return kVK_F16;
+        case Qt::Key_F17: return kVK_F17;
+        case Qt::Key_F18: return kVK_F18;
+        case Qt::Key_F19: return kVK_F19;
+        case Qt::Key_F20: return kVK_F20;
         default: return kInvalidVk;
     }
 }
