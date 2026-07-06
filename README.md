@@ -41,6 +41,22 @@ interface and a PipeWire video stream; otherwise the X11 + MIT-SHM path is used.
 - The PipeWire **client** library is linked into the single binary; it connects to the
   session's PipeWire daemon at runtime, just as the X11 backend connects to the X server.
 
+### macOS: "RegionRecord is damaged and can't be opened"
+
+The macOS build is **ad-hoc signed but not notarized** (no Apple Developer ID), so
+Gatekeeper flags the downloaded `.app` as damaged. The app is not actually damaged —
+this is the standard block for un-notarized apps carrying the download quarantine flag.
+Clear it once after unzipping:
+
+```sh
+xattr -dr com.apple.quarantine /path/to/RegionRecord.app
+open /path/to/RegionRecord.app
+```
+
+Alternatively, right-click the app in Finder and choose **Open** (the dialog then offers
+an *Open* button), or approve it under **System Settings → Privacy & Security**. On first
+launch macOS asks for **Screen Recording** permission — grant it for capture to work.
+
 ## Building
 
 Requirements: CMake ≥ 3.21, a C++17 compiler, Qt 6 (incl. Qt DBus), FFMPEG (libav*), and —

@@ -247,6 +247,16 @@ jobs:
           cp packaging/icon/RegionRecord.icns "$APP/Contents/Resources/RegionRecord.icns"
           cp build-static/RegionRecord "$APP/Contents/MacOS/RegionRecord"
           file "$APP/Contents/MacOS/RegionRecord"
+      - name: Ad-hoc code sign
+        # No Apple Developer ID, so sign ad-hoc ("-"). This makes the bundle's
+        # signature internally consistent (avoids the "damaged" Gatekeeper verdict
+        # caused by a broken/absent signature) and is required for arm64 binaries
+        # to launch at all. It is NOT notarization: a downloaded copy still carries
+        # the com.apple.quarantine flag, so users run `xattr -dr com.apple.quarantine`
+        # once (documented in the README) or right-click -> Open.
+        run: |
+          codesign --force --deep --sign - --timestamp=none dist/RegionRecord.app
+          codesign --verify --verbose dist/RegionRecord.app
       - name: Zip and upload
         run: |
           cd dist && zip -r RegionRecord-macos-${{ matrix.arch }}.zip RegionRecord.app
