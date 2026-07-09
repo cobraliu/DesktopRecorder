@@ -5,8 +5,8 @@
   <key>CFBundleName</key><string>RegionRecord</string>
   <key>CFBundleDisplayName</key><string>RegionRecord</string>
   <key>CFBundleIdentifier</key><string>ai.insnap.regionrecord</string>
-  <key>CFBundleVersion</key><string>0.2.0</string>
-  <key>CFBundleShortVersionString</key><string>0.2.0</string>
+  <key>CFBundleVersion</key><string>0.2.1</string>
+  <key>CFBundleShortVersionString</key><string>0.2.1</string>
   <key>CFBundleExecutable</key><string>RegionRecord</string>
   <key>CFBundleIconFile</key><string>RegionRecord</string>
   <key>CFBundlePackageType</key><string>APPL</string>
