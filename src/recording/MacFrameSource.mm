@@ -1,5 +1,6 @@
 #include "recording/MacFrameSource.h"
 
+#import <CoreGraphics/CoreGraphics.h>
 #import <CoreMedia/CoreMedia.h>
 #import <CoreVideo/CoreVideo.h>
 #import <Foundation/Foundation.h>
@@ -9,6 +10,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <thread>
 
 // This file is compiled with ARC (see CMakeLists); the ObjC objects held across
@@ -118,6 +120,22 @@ bool MacFrameSource::open(const CaptureRegion& region, int fps) {
     h &= ~1;
     if (w <= 0 || h <= 0) return false;
 
+    // Capture at native pixel resolution. SCStreamConfiguration.width/height are in
+    // PIXELS, so on a Retina display (backing scale 2) requesting the point size would
+    // halve the linear resolution and blur the output - especially text. Encode at the
+    // display's pixel dimensions instead, matching the physical-pixel video the X11 and
+    // Windows backends already produce.
+    double scale = 1.0;
+    if (CGDisplayModeRef mode = CGDisplayCopyDisplayMode(display.displayID)) {
+        const size_t ptW = CGDisplayModeGetWidth(mode);
+        if (ptW > 0)
+            scale = static_cast<double>(CGDisplayModeGetPixelWidth(mode)) / static_cast<double>(ptW);
+        CGDisplayModeRelease(mode);
+    }
+    const int pw = static_cast<int>(std::lround(w * scale)) & ~1;
+    const int ph = static_cast<int>(std::lround(h * scale)) & ~1;
+    if (pw <= 0 || ph <= 0) return false;
+
     // Exclude this application's own windows (Stop HUD, red capture frame,
     // countdown) from the stream.
     NSMutableArray<SCRunningApplication*>* excluded = [NSMutableArray array];
@@ -130,12 +148,12 @@ bool MacFrameSource::open(const CaptureRegion& region, int fps) {
                                                       exceptingWindows:@[]];
 
     SCStreamConfiguration* cfg = [[SCStreamConfiguration alloc] init];
-    // sourceRect is display-local points; width/height are output pixels. Requesting
-    // the point size keeps the output logically sized like the other backends (the
-    // encoder's dimensions are fixed at open()); Retina content is scaled down.
+    // sourceRect selects the display-local region in POINTS; width/height set the output
+    // size in PIXELS. Setting them to the region's native pixel size (points x scale)
+    // captures 1:1 with no downscaling, so the recording is sharp on Retina displays.
     cfg.sourceRect = CGRectMake(lx, ly, w, h);
-    cfg.width = static_cast<size_t>(w);
-    cfg.height = static_cast<size_t>(h);
+    cfg.width = static_cast<size_t>(pw);
+    cfg.height = static_cast<size_t>(ph);
     cfg.pixelFormat = kCVPixelFormatType_32BGRA;
     cfg.minimumFrameInterval = CMTimeMake(1, fps > 0 ? fps : 10);
     cfg.queueDepth = 5;
@@ -165,11 +183,11 @@ bool MacFrameSource::open(const CaptureRegion& region, int fps) {
 
     {
         std::lock_guard<std::mutex> lk(mutex_);
-        width_ = w;
-        height_ = h;
+        width_ = pw;
+        height_ = ph;
         // Until the first frame lands the reader hands out black, so a slow first
         // delivery cannot stall the recording thread or skew the timeline.
-        latest_.assign(static_cast<size_t>(w) * h * 3, 0);
+        latest_.assign(static_cast<size_t>(pw) * ph * 3, 0);
         haveFrame_ = false;
     }
     fps_ = fps > 0 ? fps : 10;
